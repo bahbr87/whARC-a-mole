@@ -15,23 +15,28 @@ interface RankingEntry {
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json");
 
 // Load rankings from file
+// Note: In Vercel, filesystem is read-only except /tmp
+// This function will return empty array if file doesn't exist or can't be read
 async function loadRankings(): Promise<RankingEntry[]> {
   try {
-    await fs.mkdir(path.dirname(RANKINGS_FILE), { recursive: true });
+    // Try to read the file directly
     const data = await fs.readFile(RANKINGS_FILE, "utf-8");
     const parsed = JSON.parse(data);
     
     if (!Array.isArray(parsed)) {
+      console.warn("Rankings file is not an array, returning empty array");
       return [];
     }
     
     return parsed;
   } catch (error: any) {
+    // File doesn't exist or can't be read (e.g., Vercel read-only filesystem)
     if (error.code === "ENOENT") {
-      await fs.writeFile(RANKINGS_FILE, "[]", "utf-8");
+      console.log("📝 Rankings file doesn't exist yet (this is normal on first run or in Vercel)");
       return [];
     }
-    console.error("Error loading rankings:", error);
+    // Any other error (permissions, etc.) - return empty array
+    console.warn("⚠️ Cannot read rankings file:", error.message);
     return [];
   }
 }
@@ -40,6 +45,16 @@ export async function GET() {
   try {
     // Load all rankings from file (always fresh read, no cache)
     const allRankings = await loadRankings();
+    
+    // If no rankings loaded (file doesn't exist or is empty), return empty array
+    if (!Array.isArray(allRankings) || allRankings.length === 0) {
+      console.log(`📊 [getDailyRanking] No rankings found in file, returning empty array`);
+      return NextResponse.json([], {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+    }
     
     console.log(`📊 [getDailyRanking] Loaded ${allRankings.length} total rankings from file`);
 
@@ -97,12 +112,13 @@ export async function GET() {
 
   } catch (err: any) {
     console.error('❌ [getDailyRanking] Erro ao gerar ranking:', err);
-    console.error('   Error details:', err.message, err.stack);
+    console.error('   Error details:', err.message);
     // Return empty array instead of error to prevent frontend crash
+    // This is safe because the frontend handles empty arrays gracefully
     return NextResponse.json([], {
       status: 200,
       headers: {
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
   }
