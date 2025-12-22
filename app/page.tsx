@@ -289,7 +289,7 @@ function WharcAMoleContent() {
 
         if (alreadyClaimed) {
           console.log("🔍 [CLAIM] User already claimed, aborting")
-          alert("Prêmio já foi reivindicado")
+          alert("Prize already claimed")
           return
         }
 
@@ -320,7 +320,7 @@ function WharcAMoleContent() {
         console.log("   - winnerRank:", winnerRank)
 
         if (!isWinner) {
-          alert(`Você não está registrado como vencedor para este dia.\n\nDia: ${date.toISOString().split('T')[0]}\n\nVerifique se você realmente está entre os 3 primeiros colocados no ranking diário.`)
+          alert(`You are not registered as a winner for this day.\n\nDate: ${date.toISOString().split('T')[0]}\n\nPlease verify that you are actually among the top 3 players in the daily ranking.`)
           return
         }
       }
@@ -343,16 +343,16 @@ function WharcAMoleContent() {
       await tx.wait()
 
       alert(
-        `Prêmio reivindicado com sucesso!\n\nTX: ${tx.hash}\nhttps://testnet.arcscan.app/tx/${tx.hash}`
+        `Prize claimed successfully!\n\nTX: ${tx.hash}\nhttps://testnet.arcscan.app/tx/${tx.hash}`
       )
     } catch (err: any) {
       console.error("CLAIM ERROR", err)
       // Check if user rejected the transaction (code 4001)
       if (err?.code === 4001 || err?.message?.includes("rejected") || err?.message?.includes("denied") || err?.message?.includes("User rejected")) {
-        alert("Transação rejeitada pelo usuário")
+        alert("Transaction rejected by user")
         return
       }
-      alert(err?.shortMessage || err?.message || "Erro ao reivindicar prêmio")
+      alert(err?.shortMessage || err?.message || "Error claiming prize")
     }
   }, [])
 

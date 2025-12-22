@@ -381,10 +381,10 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
 
         {/* 1. Prizes - ALWAYS render */}
         <Card className="p-6 bg-gradient-to-r from-yellow-50 to-amber-50 border-4 border-yellow-400">
-          <h2 className="text-2xl font-bold text-amber-900 mb-4">Prêmios</h2>
+          <h2 className="text-2xl font-bold text-amber-900 mb-4">Prizes</h2>
           {loadingPrizeConfig || loadingWinners ? (
             <div className="text-center py-4">
-              <p className="text-gray-600">Carregando prêmios...</p>
+              <p className="text-gray-600">Loading prizes...</p>
             </div>
           ) : prizeConfig ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -416,13 +416,15 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
                     )}
                   >
                     <div className="text-5xl mb-2">{medals[rank - 1]}</div>
-                    <p className="font-bold text-lg">{rank}º Lugar</p>
+                    <p className="font-bold text-lg">
+                      {rank === 1 ? "1st Place" : rank === 2 ? "2nd Place" : "3rd Place"}
+                    </p>
                     <p className="text-2xl font-bold mb-3">{prizeAmount} USDC</p>
                     
                     {/* Winner address (for display only) */}
                     {winnerAddress ? (
                       <div className="mt-3 mb-3">
-                        <p className="text-xs opacity-90 mb-1">Vencedor:</p>
+                        <p className="text-xs opacity-90 mb-1">Winner:</p>
                         <p className="font-mono text-sm break-all">{formatAddress(winnerAddress)}</p>
                         {/* Show "Already Claimed" if this winner has claimed (informative only) */}
                         {isClaimed && (
@@ -438,7 +440,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
             </div>
           ) : (
             <div className="text-center py-4">
-              <p className="text-gray-600">Não foi possível carregar os prêmios.</p>
+              <p className="text-gray-600">Failed to load prizes.</p>
             </div>
           )}
         </Card>
@@ -449,7 +451,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
             <h2 className="text-2xl font-bold text-amber-900 mb-4">Ranking</h2>
             {loadingRanking ? (
               <div className="text-center py-8">
-                <p className="text-gray-600">Carregando ranking...</p>
+                <p className="text-gray-600">Loading ranking...</p>
               </div>
             ) : dailyRanking.length > 0 ? (
               <div className="overflow-x-auto">
@@ -591,7 +593,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
               </div>
             ) : (
               <div className="text-center py-8">
-                <p className="text-gray-600">Nenhum jogador encontrado para este dia.</p>
+                <p className="text-gray-600">No players found for this day.</p>
               </div>
             )}
           </div>

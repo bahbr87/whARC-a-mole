@@ -82,15 +82,15 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
           </div>
 
           <div>
-            <h2 className="text-4xl font-bold text-amber-900 mb-2">Partida Finalizada!</h2>
-            <p className="text-lg text-amber-700">Seu resultado</p>
+            <h2 className="text-4xl font-bold text-amber-900 mb-2">Game Finished!</h2>
+            <p className="text-lg text-amber-700">Your result</p>
           </div>
 
           {/* Score Display - Destaque para os pontos */}
           <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-10 text-white shadow-2xl border-4 border-amber-600">
-            <p className="text-2xl font-bold mb-4">Você fez</p>
+            <p className="text-2xl font-bold mb-4">You scored</p>
             <p className="text-8xl font-extrabold mb-3 drop-shadow-lg">{sessionData.score.toLocaleString()}</p>
-            <p className="text-xl font-semibold">pontos</p>
+            <p className="text-xl font-semibold">points</p>
           </div>
 
           {/* Stats Grid */}
