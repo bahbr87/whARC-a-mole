@@ -105,58 +105,44 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
+  const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
+  const [loading, setLoading] = useState(true)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  const rankings = useMemo(() => {
-    const now = new Date()
-    const dayStart = getUTCDayStart(now)
-    const dayEnd = getUTCDayEnd(now)
-
-    // Filter player rankings for today only (UTC)
-    const filteredPlayerRankings = playerRankings.filter((entry) => {
-      return entry.timestamp >= dayStart && entry.timestamp <= dayEnd
-    })
-
-    // Aggregate scores by player (sum all games from same player)
-    const aggregatedByPlayer = new Map<string, { player: string; score: number; goldenMoles: number; errors: number }>()
-
-    filteredPlayerRankings.forEach((entry) => {
-      const existing = aggregatedByPlayer.get(entry.player)
-      if (existing) {
-        existing.score += entry.score
-        existing.goldenMoles += entry.goldenMoles
-        existing.errors += entry.errors
-      } else {
-        aggregatedByPlayer.set(entry.player, {
-          player: entry.player,
-          score: entry.score,
-          goldenMoles: entry.goldenMoles,
-          errors: entry.errors,
-        })
+  // Fetch ranking from /api/getDailyRanking
+  useEffect(() => {
+    const fetchRanking = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch("/api/getDailyRanking")
+        if (!res.ok) throw new Error("Error fetching ranking")
+        const data = await res.json()
+        setRanking(data)
+      } catch (err) {
+        console.error("Error fetching ranking:", err)
+        setRanking([])
+      } finally {
+        setLoading(false)
       }
-    })
+    }
 
-    // Convert map to array
-    const aggregatedPlayerRankings = Array.from(aggregatedByPlayer.values())
+    fetchRanking()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchRanking, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
-    // Map to ranking format
-    const combined = aggregatedPlayerRankings.map((entry) => ({
-      rank: 0,
+  const rankings = useMemo(() => {
+    // Map the API response to the expected format
+    return ranking.map((entry, index) => ({
+      rank: index + 1,
       player: entry.player,
-      score: entry.score,
-      goldenMoles: entry.goldenMoles,
-      errors: entry.errors,
+      score: entry.totalPoints,
+      goldenMoles: 0, // Not available from API
+      errors: 0, // Not available from API
     }))
-
-    // Sort by score descending and assign ranks
-    combined.sort((a, b) => b.score - a.score)
-    combined.forEach((entry, index) => {
-      entry.rank = index + 1
-    })
-
-    return combined
-  }, [playerRankings])
+  }, [ranking])
 
   // Pagination logic
   const paginatedRankings = useMemo(() => {
@@ -297,65 +283,75 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
         {/* Rankings Table */}
         <Card className="bg-white/95 backdrop-blur border-4 border-amber-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-amber-600 text-white">
-                <tr>
-                  <th className="px-4 py-3 text-left font-bold">Rank</th>
-                  <th className="px-4 py-3 text-left font-bold">Player</th>
-                  <th className="px-4 py-3 text-right font-bold">Score</th>
-                  <th className="px-4 py-3 text-center font-bold">Golden</th>
-                  <th className="px-4 py-3 text-center font-bold">Errors</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-amber-200">
-                {paginatedRankings.map((player, index) => {
-                  const globalIndex = (currentPage - 1) * itemsPerPage + index
-                  const isCurrentPlayer = player.player === currentPlayer
-                  const isTop3 = globalIndex < 3
+            {loading ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Loading ranking...</p>
+              </div>
+            ) : ranking.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">No players found for today.</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-amber-600 text-white">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-bold">Rank</th>
+                    <th className="px-4 py-3 text-left font-bold">Player</th>
+                    <th className="px-4 py-3 text-right font-bold">Score</th>
+                    <th className="px-4 py-3 text-center font-bold">Golden</th>
+                    <th className="px-4 py-3 text-center font-bold">Errors</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-200">
+                  {paginatedRankings.map((player, index) => {
+                    const globalIndex = (currentPage - 1) * itemsPerPage + index
+                    const isCurrentPlayer = player.player.toLowerCase() === currentPlayer?.toLowerCase()
+                    const isTop3 = globalIndex < 3
 
-                  return (
-                    <tr
-                      key={player.player}
-                      className={cn(
-                        "transition-colors",
-                        isCurrentPlayer && "bg-amber-100 font-bold",
-                        !isCurrentPlayer && "hover:bg-amber-50",
-                        isTop3 && !isCurrentPlayer && "bg-amber-50/50",
-                      )}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {isTop3 && (
-                            <span className="text-xl">
-                              {globalIndex === 0 && "🥇"}
-                              {globalIndex === 1 && "🥈"}
-                              {globalIndex === 2 && "🥉"}
-                            </span>
-                          )}
-                          <span className={cn(isTop3 && "font-bold text-amber-900")}>#{player.rank}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-amber-900">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{formatAddress(player.player)}</span>
-                          {isCurrentPlayer && (
-                            <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">YOU</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.score}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="inline-flex items-center gap-1">
-                          <Star className="w-4 h-4 text-yellow-600" />
-                          {player.goldenMoles}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr
+                        key={player.player}
+                        className={cn(
+                          "transition-colors",
+                          isCurrentPlayer && "bg-amber-100 font-bold",
+                          !isCurrentPlayer && "hover:bg-amber-50",
+                          isTop3 && !isCurrentPlayer && "bg-amber-50/50",
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {isTop3 && (
+                              <span className="text-xl">
+                                {globalIndex === 0 && "🥇"}
+                                {globalIndex === 1 && "🥈"}
+                                {globalIndex === 2 && "🥉"}
+                              </span>
+                            )}
+                            <span className={cn(isTop3 && "font-bold text-amber-900")}>#{player.rank}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-amber-900">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm">{formatAddress(player.player)}</span>
+                            {isCurrentPlayer && (
+                              <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">YOU</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.score.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-flex items-center gap-1">
+                            <Star className="w-4 h-4 text-yellow-600" />
+                            {player.goldenMoles}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </Card>
 
