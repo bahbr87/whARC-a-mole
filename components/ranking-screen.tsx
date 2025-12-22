@@ -281,10 +281,6 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
         <Card className="p-6 bg-amber-50 border-4 border-amber-900">
           <h3 className="text-xl font-bold text-amber-900 mb-4">Rules & Prize Claim</h3>
           <div className="space-y-3 text-sm text-amber-900">
-            <div className="bg-yellow-100 border-2 border-yellow-400 rounded-lg p-4">
-              <p className="font-bold mb-2">⚠️ Prize Claim Deadline:</p>
-              <p>You can only claim prizes within 7 days from the date you won. After 7 days, prizes expire.</p>
-            </div>
             <div className="bg-blue-100 border-2 border-blue-400 rounded-lg p-4">
               <p className="font-bold mb-2">📊 Tiebreaker Criteria:</p>
               <ol className="list-decimal list-inside space-y-1 ml-2">
