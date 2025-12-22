@@ -111,27 +111,37 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
   const maxPages = 10 // 500 players / 50 per page
 
   // Fetch ranking from /api/getDailyRanking
+  // Always fetch from API, never rely on local state
   useEffect(() => {
     const fetchRanking = async () => {
       try {
         setLoading(true)
-        const res = await fetch("/api/getDailyRanking")
+        // Add cache-busting to ensure fresh data on user change
+        const res = await fetch("/api/getDailyRanking", {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+          },
+        })
         if (!res.ok) throw new Error("Error fetching ranking")
         const data = await res.json()
-        setRanking(data)
+        // Always update ranking from API response
+        setRanking(Array.isArray(data) ? data : [])
       } catch (err) {
         console.error("Error fetching ranking:", err)
-        setRanking([])
+        // Don't clear ranking on error, keep previous data
+        // setRanking([])
       } finally {
         setLoading(false)
       }
     }
 
+    // Always fetch immediately when component mounts or user changes
     fetchRanking()
     // Refresh every 30 seconds
     const interval = setInterval(fetchRanking, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, []) // Empty deps - always fetch on mount
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
