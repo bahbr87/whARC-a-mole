@@ -47,15 +47,17 @@ export async function GET() {
 
     // Filter rankings for today only (UTC)
     const todayRankings = allRankings.filter((entry) => {
+      if (!entry || typeof entry.timestamp !== 'number') return false;
       return entry.timestamp >= todayStart.getTime() && entry.timestamp <= todayEnd.getTime();
     });
 
     // Aggregate scores by player (sum all games from same player)
     const rankingMap: Record<string, number> = {};
     todayRankings.forEach((entry) => {
-      const player = entry.player.toLowerCase();
+      if (!entry || !entry.player || typeof entry.score !== 'number') return;
+      const player = String(entry.player).toLowerCase();
       const points = entry.score;
-      if (!isNaN(points)) {
+      if (!isNaN(points) && isFinite(points)) {
         rankingMap[player] = (rankingMap[player] || 0) + points;
       }
     });
@@ -75,8 +77,14 @@ export async function GET() {
       },
     });
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('Erro ao gerar ranking:', err);
-    return NextResponse.json({ error: 'Erro ao gerar ranking' }, { status: 500 });
+    // Return empty array instead of error to prevent frontend crash
+    return NextResponse.json([], {
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    });
   }
 }
