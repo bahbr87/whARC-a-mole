@@ -11,6 +11,7 @@ interface RankingEntry {
 }
 
 // File-based storage for persistence
+// Use same path as /api/rankings to ensure consistency
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json");
 
 // Load rankings from file
@@ -37,19 +38,33 @@ async function loadRankings(): Promise<RankingEntry[]> {
 
 export async function GET() {
   try {
-    // Load all rankings from file
+    // Load all rankings from file (always fresh read, no cache)
     const allRankings = await loadRankings();
+    
+    console.log(`📊 [getDailyRanking] Loaded ${allRankings.length} total rankings from file`);
 
     // Use UTC for date filtering to ensure consistency across timezones
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    
+    const todayStartTime = todayStart.getTime();
+    const todayEndTime = todayEnd.getTime();
+    
+    console.log(`📊 [getDailyRanking] Filtering for today (UTC):`);
+    console.log(`   Start: ${todayStart.toISOString()} (${todayStartTime})`);
+    console.log(`   End: ${todayEnd.toISOString()} (${todayEndTime})`);
+    console.log(`   Current time: ${now.toISOString()} (${now.getTime()})`);
 
     // Filter rankings for today only (UTC)
     const todayRankings = allRankings.filter((entry) => {
-      if (!entry || typeof entry.timestamp !== 'number') return false;
-      return entry.timestamp >= todayStart.getTime() && entry.timestamp <= todayEnd.getTime();
+      if (!entry || typeof entry.timestamp !== 'number') {
+        return false;
+      }
+      return entry.timestamp >= todayStartTime && entry.timestamp <= todayEndTime;
     });
+
+    console.log(`📊 [getDailyRanking] Found ${todayRankings.length} entries for today out of ${allRankings.length} total`);
 
     // Aggregate scores by player (sum all games from same player)
     const rankingMap: Record<string, number> = {};
@@ -66,19 +81,23 @@ export async function GET() {
       .map(([player, totalPoints]) => ({ player, totalPoints }))
       .sort((a, b) => b.totalPoints - a.totalPoints);
 
-    console.log(`📊 [getDailyRanking] Returning ranking: ${ranking.length} players`);
+    console.log(`📊 [getDailyRanking] Final ranking: ${ranking.length} players`);
     console.log(`   Date range: ${todayStart.toISOString()} to ${todayEnd.toISOString()}`);
     console.log(`   Total entries found: ${todayRankings.length}`);
+    if (ranking.length > 0) {
+      console.log(`   Top player: ${ranking[0].player.substring(0, 10)}... with ${ranking[0].totalPoints} points`);
+    }
 
     // Add cache headers to prevent stale data, but allow fresh fetches
     return NextResponse.json(ranking, {
       headers: {
-        'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
 
   } catch (err: any) {
-    console.error('Erro ao gerar ranking:', err);
+    console.error('❌ [getDailyRanking] Erro ao gerar ranking:', err);
+    console.error('   Error details:', err.message, err.stack);
     // Return empty array instead of error to prevent frontend crash
     return NextResponse.json([], {
       status: 200,
