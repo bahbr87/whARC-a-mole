@@ -2,83 +2,29 @@ import { NextRequest, NextResponse } from "next/server"
 import { promises as fs } from "fs"
 import path from "path"
 import { getDayId } from "@/utils/day"
-
-export interface RankingEntry {
-  player: string
-  score: number
-  goldenMoles: number
-  errors: number
-  timestamp: number
-}
+import { ensureRankingsLoaded, getRankingsFromCache, addRankingToCache, replaceRankingsCache, type RankingEntry } from "@/lib/rankings-cache"
+import { saveMatch } from "@/lib/saveMatch"
 
 // File-based storage for persistence
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
 
-// Load rankings from file
-async function loadRankings(): Promise<RankingEntry[]> {
-  try {
-    await fs.mkdir(path.dirname(RANKINGS_FILE), { recursive: true })
-    const data = await fs.readFile(RANKINGS_FILE, "utf-8")
-    const parsed = JSON.parse(data)
-    
-    // Validate that it's an array
-    if (!Array.isArray(parsed)) {
-      console.warn("⚠️  Rankings file is not an array, resetting to empty array")
-      await fs.writeFile(RANKINGS_FILE, "[]", "utf-8")
-      return []
-    }
-    
-    return parsed
-  } catch (error: any) {
-    // File doesn't exist or is invalid, return empty array
-    if (error.code === "ENOENT") {
-      console.log("📝 Rankings file doesn't exist yet, starting with empty array")
-      // Create empty file
-      await fs.writeFile(RANKINGS_FILE, "[]", "utf-8")
-      return []
-    }
-    console.error("❌ Error loading rankings:", error)
-    // If file is corrupted, try to backup and reset
-    try {
-      const backupPath = `${RANKINGS_FILE}.backup.${Date.now()}`
-      await fs.copyFile(RANKINGS_FILE, backupPath)
-      console.log(`💾 Backed up corrupted file to ${backupPath}`)
-      await fs.writeFile(RANKINGS_FILE, "[]", "utf-8")
-    } catch (backupError) {
-      console.error("Failed to backup corrupted file:", backupError)
-    }
-    return []
-  }
-}
-
 // Save rankings to file
+// Note: In Vercel, filesystem is read-only except /tmp
+// This function will fail silently in read-only environments
 async function saveRankings(rankings: RankingEntry[]): Promise<void> {
   try {
-    await fs.mkdir(path.dirname(RANKINGS_FILE), { recursive: true })
     await fs.writeFile(RANKINGS_FILE, JSON.stringify(rankings, null, 2), "utf-8")
-  } catch (error) {
+  } catch (error: any) {
+    // In Vercel, filesystem is read-only, so this will fail
+    // Log warning but don't throw - allow the request to succeed
+    if (error.code === "EACCES" || error.code === "EROFS" || error.code === "ENOENT") {
+      console.warn("⚠️ Cannot save rankings file (read-only filesystem in Vercel):", error.message)
+      // Don't throw - allow request to succeed even if file can't be written
+      return
+    }
     console.error("Error saving rankings:", error)
+    // Only throw for unexpected errors
     throw error
-  }
-}
-
-// Cache rankings in memory for performance, but persist to file
-// IMPORTANT: Always reload from file on each request to handle server restarts
-let rankingsStorage: RankingEntry[] = []
-let rankingsLoaded = false
-let lastLoadTime = 0
-const RELOAD_INTERVAL = 5000 // Reload from file every 5 seconds to handle external changes
-
-// Initialize rankings on first access
-async function ensureRankingsLoaded() {
-  const now = Date.now()
-  // Reload from file if never loaded, or if it's been more than RELOAD_INTERVAL since last load
-  // This ensures we don't lose data if server restarts
-  if (!rankingsLoaded || (now - lastLoadTime) > RELOAD_INTERVAL) {
-    rankingsStorage = await loadRankings()
-    rankingsLoaded = true
-    lastLoadTime = now
-    console.log(`📊 Loaded ${rankingsStorage.length} rankings from file`)
   }
 }
 
@@ -86,6 +32,7 @@ async function ensureRankingsLoaded() {
 export async function GET(request: NextRequest) {
   try {
     await ensureRankingsLoaded()
+    const rankingsStorage = getRankingsFromCache()
     
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get("startDate")
@@ -133,12 +80,21 @@ export async function POST(request: NextRequest) {
 
     // Ensure we have latest data before adding
     await ensureRankingsLoaded()
+    const rankingsStorage = getRankingsFromCache()
     
-    rankingsStorage.push(newEntry)
-    await saveRankings(rankingsStorage)
+    // Add to shared cache (this makes it immediately available in /api/getDailyRanking)
+    addRankingToCache(newEntry)
     
+    // Save match to matches.json (called when match ends)
+    saveMatch(player, score)
+    
+    // Try to save to file (will fail silently in Vercel, but that's OK - we have in-memory cache)
+    const updatedRankings = getRankingsFromCache()
+    await saveRankings(updatedRankings)
+    
+    const finalRankings = getRankingsFromCache()
     console.log(`✅ Saved ranking: Player ${player.substring(0, 10)}... Score: ${score} Day: ${calculatedDay} Timestamp: ${new Date(timestamp).toISOString()}`)
-    console.log(`   Total rankings in storage: ${rankingsStorage.length}`)
+    console.log(`   Total rankings in storage: ${finalRankings.length}`)
 
     return NextResponse.json({ success: true, entry: newEntry, day: calculatedDay }, { status: 201 })
   } catch (error) {
@@ -151,6 +107,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     await ensureRankingsLoaded()
+    let rankingsStorage = getRankingsFromCache()
     
     const searchParams = request.nextUrl.searchParams
     const beforeTimestamp = searchParams.get("beforeTimestamp")
@@ -158,20 +115,22 @@ export async function DELETE(request: NextRequest) {
 
     if (clearAll) {
       // Clear all rankings (for testing/cleanup)
-      rankingsStorage = []
-      await saveRankings(rankingsStorage)
+      replaceRankingsCache([])
+      await saveRankings([])
       return NextResponse.json({ success: true, message: "All rankings cleared", count: 0 })
     }
 
     if (beforeTimestamp) {
       const before = parseInt(beforeTimestamp)
-      rankingsStorage = rankingsStorage.filter((entry) => entry.timestamp >= before)
+      const filtered = rankingsStorage.filter((entry) => entry.timestamp >= before)
+      replaceRankingsCache(filtered)
+      await saveRankings(filtered)
+      return NextResponse.json({ success: true, count: filtered.length })
     } else {
-      rankingsStorage = []
+      replaceRankingsCache([])
+      await saveRankings([])
+      return NextResponse.json({ success: true, count: 0 })
     }
-
-    await saveRankings(rankingsStorage)
-    return NextResponse.json({ success: true, count: rankingsStorage.length })
   } catch (error) {
     console.error("Error clearing rankings:", error)
     return NextResponse.json({ error: "Failed to clear rankings" }, { status: 500 })
