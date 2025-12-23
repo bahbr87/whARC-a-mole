@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { promises as fs } from "fs"
-import fsSync from "fs"
 import path from "path"
 import { getDayId } from "@/utils/day"
 import { ensureRankingsLoaded, getRankingsFromCache, addRankingToCache, replaceRankingsCache, type RankingEntry } from "@/lib/rankings-cache"
-import { saveMatch } from "@/lib/saveMatch"
+import { supabase } from "@/lib/supabase"
 
 // File-based storage for persistence
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
@@ -29,46 +28,26 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
   }
 }
 
-// GET /api/rankings - Get daily ranking from matches.json
+// GET /api/rankings - Get daily ranking from Supabase
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), "data/matches.json");
-    
-    // Read matches file or return empty array if it doesn't exist
-    let matches: Array<{ player: string; points: number; timestamp: string }> = [];
-    try {
-      if (fsSync.existsSync(filePath)) {
-        const data = fsSync.readFileSync(filePath, "utf-8");
-        if (data.trim()) {
-          matches = JSON.parse(data);
-        }
-      }
-    } catch (error: any) {
-      // If file doesn't exist or can't be read, return empty array
-      if (error.code === "ENOENT") {
-        return NextResponse.json([]);
-      }
-      throw error;
-    }
-
-    // Ensure matches is an array
-    if (!Array.isArray(matches)) {
-      matches = [];
-    }
-
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const rankingMap: Record<string, number> = {};
+    const { data, error } = await supabase
+      .from('matches')
+      .select('player, points, timestamp')
+      .gte('timestamp', todayStart.toISOString())
+      .lte('timestamp', todayEnd.toISOString());
 
-    matches.forEach((match: any) => {
-      const ts = new Date(match.timestamp).getTime();
-      if (ts >= todayStart.getTime() && ts <= todayEnd.getTime()) {
-        const player = match.player.toLowerCase();
-        rankingMap[player] = (rankingMap[player] || 0) + match.points;
-      }
+    if (error) throw error;
+
+    const rankingMap: Record<string, number> = {};
+    data?.forEach(match => {
+      const player = match.player.toLowerCase();
+      rankingMap[player] = (rankingMap[player] || 0) + match.points;
     });
 
     const ranking = Object.entries(rankingMap)
@@ -77,8 +56,8 @@ export async function GET() {
 
     return NextResponse.json(ranking);
   } catch (err) {
-    console.error("Erro ao gerar ranking:", err);
-    return NextResponse.json({ error: "Erro ao gerar ranking" }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'Erro ao gerar ranking' }, { status: 500 });
   }
 }
 
@@ -112,8 +91,7 @@ export async function POST(request: NextRequest) {
     // Add to shared cache (this makes it immediately available in /api/getDailyRanking)
     addRankingToCache(newEntry)
     
-    // Save match to matches.json (called when match ends)
-    saveMatch(player, score)
+    // Note: Match is saved to Supabase via /api/saveMatch (called from frontend)
     
     // Try to save to file (will fail silently in Vercel, but that's OK - we have in-memory cache)
     const updatedRankings = getRankingsFromCache()
