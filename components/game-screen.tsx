@@ -296,7 +296,7 @@ export function GameScreen({
   const [showCreditsRequiredDialog, setShowCreditsRequiredDialog] = useState(false)
   const [gameSessionId, setGameSessionId] = useState<string>("")
   const { recordClick, isAuthorized, authorize, pendingClicks } = useMetaTransactions()
-  const { credits, refreshCredits, getCreditsBalance } = useGameCredits()
+  const { credits, refreshCredits, getCreditsBalance } = useGameCredits(walletAddress)
   
   // Force refresh credits when component mounts and wallet is connected
   useEffect(() => {
@@ -878,6 +878,7 @@ export function GameScreen({
       <CreditsPurchaseDialog
         open={showCreditsDialog}
         onOpenChange={setShowCreditsDialog}
+        walletAddress={walletAddress}
       />
 
       {/* Credits Required Dialog */}

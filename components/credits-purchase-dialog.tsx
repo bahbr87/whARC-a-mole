@@ -68,10 +68,11 @@ const playClickSound = () => {
 interface CreditsPurchaseDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  walletAddress: string
 }
 
-export function CreditsPurchaseDialog({ open, onOpenChange }: CreditsPurchaseDialogProps) {
-  const { purchaseCredits, isLoading, refreshCredits } = useGameCredits()
+export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: CreditsPurchaseDialogProps) {
+  const { purchaseCredits, isLoading, refreshCredits } = useGameCredits(walletAddress)
   const [amount, setAmount] = useState("1000")
   const [error, setError] = useState<string | null>(null)
 

@@ -32,8 +32,10 @@ interface UseGameCreditsReturn {
   isLoading: boolean
 }
 
-export function useGameCredits(): UseGameCreditsReturn {
-  const { provider, address, isConnected } = useArcWallet()
+export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
+  const { provider, address: hookAddress, isConnected } = useArcWallet()
+  // Use walletAddress if provided, otherwise fallback to hook address
+  const address = walletAddress || hookAddress
   const [credits, setCredits] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const contractRef = useRef<Contract | null>(null)
@@ -116,31 +118,17 @@ export function useGameCredits(): UseGameCreditsReturn {
 
   // Refresh credits - ALWAYS reads from contract (source of truth)
   const refreshCredits = useCallback(async () => {
-    // Try to get address from window.ethereum if address is null (fallback)
-    let currentAddress = address
-    
-    if (!currentAddress && typeof window !== "undefined" && window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: "eth_accounts" })
-        if (accounts && accounts.length > 0) {
-          currentAddress = accounts[0]
-          console.log("🔄 refreshCredits: Got address from window.ethereum:", currentAddress)
-        }
-      } catch (error) {
-        console.log("🔄 refreshCredits: Could not get address from window.ethereum")
-      }
-    }
-    
-    if (!currentAddress) {
-      console.log("🔄 refreshCredits: No address available, setting credits to 0")
+    // ✅ Use walletAddress directly (source of truth from GameScreen)
+    if (!walletAddress || walletAddress.trim() === "") {
+      console.log("🔄 refreshCredits: No walletAddress available, setting credits to 0")
       setCredits(0)
       return
     }
 
-    console.log("🔄 refreshCredits: Reading from contract for address:", currentAddress)
+    console.log("🔄 refreshCredits: Reading from contract for address:", walletAddress)
 
     // Read directly from contract (source of truth)
-    const balance = await readCreditsFromContract(currentAddress)
+    const balance = await readCreditsFromContract(walletAddress)
     
     console.log("🔄 refreshCredits: Balance from contract:", balance, "type:", typeof balance)
     
@@ -148,7 +136,7 @@ export function useGameCredits(): UseGameCreditsReturn {
     console.log("🔄 refreshCredits: Updating state to:", balance)
     setCredits(balance)
     console.log("🔄 refreshCredits: State updated")
-  }, [address, readCreditsFromContract])
+  }, [walletAddress, readCreditsFromContract])
 
   // Setup event listeners for CreditsPurchased and CreditsConsumed
   const setupEventListeners = useCallback(() => {
@@ -156,7 +144,8 @@ export function useGameCredits(): UseGameCreditsReturn {
     eventListenersRef.current.forEach(remove => remove())
     eventListenersRef.current = []
 
-    if (!isConnected || !address || GAME_CREDITS_ADDRESS === "0x0000000000000000000000000000000000000000") {
+    // ✅ Use walletAddress directly (source of truth from GameScreen)
+    if (!walletAddress || walletAddress.trim() === "" || GAME_CREDITS_ADDRESS === "0x0000000000000000000000000000000000000000") {
       return
     }
 
@@ -167,7 +156,7 @@ export function useGameCredits(): UseGameCreditsReturn {
       }
 
       // Listen for CreditsPurchased events for this player
-      const filterPurchased = contract.filters.CreditsPurchased(address)
+      const filterPurchased = contract.filters.CreditsPurchased(walletAddress)
       const listenerPurchased = (player: string, amount: bigint, creditsReceived: bigint, totalCost: bigint) => {
         console.log("📢 CreditsPurchased event:", { player, amount: amount.toString(), creditsReceived: creditsReceived.toString() })
         // Refresh balance from contract after event
@@ -176,7 +165,7 @@ export function useGameCredits(): UseGameCreditsReturn {
       contract.on(filterPurchased, listenerPurchased)
 
       // Listen for CreditsConsumed events for this player
-      const filterConsumed = contract.filters.CreditsConsumed(address)
+      const filterConsumed = contract.filters.CreditsConsumed(walletAddress)
       const listenerConsumed = (player: string, clickCount: bigint, creditsUsed: bigint, remainingCredits: bigint) => {
         console.log("📢 CreditsConsumed event:", { player, clickCount: clickCount.toString(), remainingCredits: remainingCredits.toString() })
         // Refresh balance from contract after event
@@ -192,7 +181,7 @@ export function useGameCredits(): UseGameCreditsReturn {
     } catch (error: any) {
       console.error("Error setting up event listeners:", error.message || error)
     }
-  }, [isConnected, address, getProviderAndContract, refreshCredits])
+  }, [walletAddress, getProviderAndContract, refreshCredits])
 
   // Purchase credits - wait for tx.wait() before updating UI
   const purchaseCredits = useCallback(
@@ -201,7 +190,8 @@ export function useGameCredits(): UseGameCreditsReturn {
         throw new Error("GameCredits contract not deployed")
       }
 
-      if (!isConnected || !address) {
+      // ✅ ÚNICA validação permitida: apenas walletAddress
+      if (!walletAddress || walletAddress.trim() === "") {
         throw new Error("Wallet not connected. Please connect your wallet first.")
       }
 
@@ -212,18 +202,8 @@ export function useGameCredits(): UseGameCreditsReturn {
           throw new Error("Wallet not connected. Please install and connect a Web3 wallet.")
         }
 
-        // Get current address from wallet (source of truth)
-        const accounts = await window.ethereum.request({ method: "eth_accounts" })
-        if (!accounts || accounts.length === 0) {
-          throw new Error("No accounts found. Please connect your wallet.")
-        }
-
-        const currentAddress = accounts[0]
-        
-        // Verify address matches
-        if (currentAddress.toLowerCase() !== address.toLowerCase()) {
-          throw new Error("Wallet address mismatch. Please reconnect your wallet.")
-        }
+        // Use walletAddress directly (source of truth from GameScreen)
+        const currentAddress = walletAddress
 
         const currentProvider = new BrowserProvider(window.ethereum)
         const signer = await currentProvider.getSigner()
@@ -312,13 +292,14 @@ export function useGameCredits(): UseGameCreditsReturn {
         setIsLoading(false)
       }
     },
-    [isConnected, address, readCreditsFromContract],
+    [walletAddress, readCreditsFromContract],
   )
 
   // Consume credits (for manual consumption if needed)
   const consumeCredits = useCallback(
     async (clickCount: number) => {
-      if (!isConnected || !address) {
+      // ✅ ÚNICA validação permitida: apenas walletAddress
+      if (!walletAddress || walletAddress.trim() === "") {
         throw new Error("Wallet not connected")
       }
 
@@ -341,7 +322,7 @@ export function useGameCredits(): UseGameCreditsReturn {
         await tx.wait()
         
         // Read balance from contract after consumption
-        const newBalance = await readCreditsFromContract(address)
+        const newBalance = await readCreditsFromContract(walletAddress)
         setCredits(newBalance)
       } catch (error: any) {
         console.error("Error consuming credits:", error)
@@ -354,7 +335,7 @@ export function useGameCredits(): UseGameCreditsReturn {
         throw error
       }
     },
-    [isConnected, address, readCreditsFromContract],
+    [walletAddress, readCreditsFromContract],
   )
 
   // Record a click (for compatibility - actual consumption happens via backend)
@@ -362,28 +343,28 @@ export function useGameCredits(): UseGameCreditsReturn {
     async (sessionId: string) => {
       // This is handled by the backend via meta-transactions
       // Just refresh credits after a delay
-      if (isConnected && address) {
+      if (walletAddress && walletAddress.trim() !== "") {
         setTimeout(() => {
           refreshCredits()
         }, 2000)
       }
     },
-    [isConnected, address, refreshCredits],
+    [walletAddress, refreshCredits],
   )
 
   // Get credits balance directly from contract (source of truth)
   const getCreditsBalance = useCallback(async (): Promise<number> => {
-    if (!address) {
+    if (!walletAddress || walletAddress.trim() === "") {
       return 0
     }
 
     // Always read from contract (don't check isConnected)
-    return await readCreditsFromContract(address)
-  }, [address, readCreditsFromContract])
+    return await readCreditsFromContract(walletAddress)
+  }, [walletAddress, readCreditsFromContract])
 
-  // Effect: Setup event listeners when wallet is connected
+  // Effect: Setup event listeners when walletAddress is available
   useEffect(() => {
-    if (isConnected && address) {
+    if (walletAddress && walletAddress.trim() !== "") {
       setupEventListeners()
     }
 
@@ -392,46 +373,28 @@ export function useGameCredits(): UseGameCreditsReturn {
       eventListenersRef.current.forEach(remove => remove())
       eventListenersRef.current = []
     }
-  }, [isConnected, address, setupEventListeners])
+  }, [walletAddress, setupEventListeners])
 
-  // Effect: Refresh credits when address changes OR on mount (don't rely on isConnected)
+  // Effect: Refresh credits when walletAddress changes OR on mount
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
     
-    // Try to get address from window.ethereum if address is null
-    const checkAndRefresh = async () => {
-      let currentAddress = address
+    // ✅ Use walletAddress directly (source of truth from GameScreen)
+    if (walletAddress && walletAddress.trim() !== "") {
+      console.log("🔄 useEffect: walletAddress exists, refreshing credits immediately")
+      // Read balance from contract immediately
+      refreshCredits()
       
-      if (!currentAddress && typeof window !== "undefined" && window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: "eth_accounts" })
-          if (accounts && accounts.length > 0) {
-            currentAddress = accounts[0]
-            console.log("🔄 useEffect: Got address from window.ethereum:", currentAddress)
-          }
-        } catch (error) {
-          // Ignore errors
-        }
-      }
-      
-      if (currentAddress) {
-        console.log("🔄 useEffect: Address exists, refreshing credits immediately")
-        // Read balance from contract immediately
-        await refreshCredits()
-        
-        // Poll every 3 seconds to keep in sync (backup to events)
-        interval = setInterval(() => {
-          console.log("🔄 Polling credits from contract...")
-          refreshCredits()
-        }, 3000)
-      } else {
-        // No address - set to 0
-        console.log("🔄 useEffect: No address available, setting credits to 0")
-        setCredits(0)
-      }
+      // Poll every 3 seconds to keep in sync (backup to events)
+      interval = setInterval(() => {
+        console.log("🔄 Polling credits from contract...")
+        refreshCredits()
+      }, 3000)
+    } else {
+      // No walletAddress - set to 0
+      console.log("🔄 useEffect: No walletAddress available, setting credits to 0")
+      setCredits(0)
     }
-    
-    checkAndRefresh()
     
     // Cleanup function
     return () => {
@@ -440,7 +403,7 @@ export function useGameCredits(): UseGameCreditsReturn {
         clearInterval(interval)
       }
     }
-  }, [address, refreshCredits])
+  }, [walletAddress, refreshCredits])
 
   return {
     credits,
