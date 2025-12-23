@@ -220,8 +220,10 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         
         // Check USDC balance - read decimals dynamically from contract
         const USDC_ABI = [
-          "function balanceOf(address) view returns (uint256)",
+          "function balanceOf(address owner) view returns (uint256)",
           "function decimals() view returns (uint8)",
+          "function allowance(address owner, address spender) view returns (uint256)",
+          "function approve(address spender, uint256 amount) returns (bool)",
         ]
         const usdcContract = new Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, signer)
         
