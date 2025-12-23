@@ -225,28 +225,34 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         ]
         const usdcContract = new Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, signer)
         
-        const balanceRaw = await usdcContract.balanceOf(currentAddress)
+        // ✅ All contract values are BigInt
+        const balanceRaw: bigint = await usdcContract.balanceOf(currentAddress)
         const decimals = await usdcContract.decimals()
+        
+        // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
         const balanceAmount = Number(balanceRaw) / 10 ** decimals
         
         if (balanceAmount === 0) {
           throw new Error(`No USDC found. You need USDC tokens (contract: ${USDC_CONTRACT_ADDRESS}) to purchase credits.`)
         }
         
-        // Calculate cost
+        // Calculate cost - contract returns BigInt
         const contract = new Contract(GAME_CREDITS_ADDRESS, GAME_CREDITS_ABI, signer)
-        const cost = await contract.calculatePurchaseCost(amount)
-        const costAmount = Number(cost) / 10 ** decimals
+        const costRaw: bigint = await contract.calculatePurchaseCost(amount)
         
-        // Check if user has enough USDC
-        if (balanceRaw < cost) {
+        // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
+        const costAmount = Number(costRaw) / 10 ** decimals
+        
+        // ✅ Check if user has enough USDC - comparison between BigInt only
+        if (balanceRaw < costRaw) {
           throw new Error(`Insufficient USDC balance. You have ${balanceAmount.toFixed(decimals)} USDC but need ${costAmount.toFixed(decimals)} USDC.`)
         }
 
-        // Check and approve USDC spending
-        const allowance = await usdcContract.allowance(currentAddress, GAME_CREDITS_ADDRESS)
+        // Check and approve USDC spending - contract returns BigInt
+        const allowanceRaw: bigint = await usdcContract.allowance(currentAddress, GAME_CREDITS_ADDRESS)
 
-        if (allowance < cost) {
+        // ✅ Comparison between BigInt only
+        if (allowanceRaw < costRaw) {
           // Approve 1000 USDC (using the decimals from contract)
           // Calculate 10^decimals using multiplication
           let decimalsMultiplier = BigInt(1)

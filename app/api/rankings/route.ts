@@ -31,6 +31,11 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
 // GET /api/rankings - Get daily ranking from Supabase
 export async function GET() {
   try {
+    // Validate Supabase configuration at runtime
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+    }
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
