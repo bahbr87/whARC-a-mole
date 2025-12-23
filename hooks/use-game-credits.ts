@@ -36,7 +36,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
   const { provider, address: hookAddress, isConnected } = useArcWallet()
   // Use walletAddress if provided, otherwise fallback to hook address
   const address = walletAddress || hookAddress
-  const [credits, setCredits] = useState(0)
+  const [credits, setCredits] = useState<number>(0)
   const [isLoading, setIsLoading] = useState(false)
   const contractRef = useRef<Contract | null>(null)
   const providerRef = useRef<BrowserProvider | null>(null)
@@ -133,8 +133,10 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     console.log("🔄 refreshCredits: Balance from contract:", balance, "type:", typeof balance)
     
     // ALWAYS update state, even if value is the same (forces re-render)
-    console.log("🔄 refreshCredits: Updating state to:", balance)
-    setCredits(balance)
+    // ✅ Convert to number explicitly (guarantee type safety)
+    const creditsNumber = Number(balance)
+    console.log("🔄 refreshCredits: Updating state to:", creditsNumber)
+    setCredits(creditsNumber)
     console.log("🔄 refreshCredits: State updated")
   }, [walletAddress, readCreditsFromContract])
 
@@ -275,8 +277,8 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         await new Promise(resolve => setTimeout(resolve, 1000)) // Small delay for indexing
         const newBalance = await readCreditsFromContract(currentAddress)
         
-        // Update UI with value from contract
-        setCredits(newBalance)
+        // ✅ Update UI with value from contract (convert to number explicitly)
+        setCredits(Number(newBalance))
         
         console.log("✅ Credits purchased. New balance from contract:", newBalance)
       } catch (error: any) {
@@ -323,7 +325,8 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         
         // Read balance from contract after consumption
         const newBalance = await readCreditsFromContract(walletAddress)
-        setCredits(newBalance)
+        // ✅ Convert to number explicitly (guarantee type safety)
+        setCredits(Number(newBalance))
       } catch (error: any) {
         console.error("Error consuming credits:", error)
         // Check if user rejected the transaction (code 4001)
@@ -359,7 +362,9 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     }
 
     // Always read from contract (don't check isConnected)
-    return await readCreditsFromContract(walletAddress)
+    const balance = await readCreditsFromContract(walletAddress)
+    // ✅ Convert to number explicitly (guarantee type safety)
+    return Number(balance)
   }, [walletAddress, readCreditsFromContract])
 
   // Effect: Setup event listeners when walletAddress is available
