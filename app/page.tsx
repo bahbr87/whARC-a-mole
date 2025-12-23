@@ -13,7 +13,6 @@ import { WalletProvider, useWallet } from "@/contexts/wallet-context"
 import { getRankings, saveRanking } from "@/lib/api"
 import { getDayId } from "@/utils/day"
 import { useDailyResultsPopup } from "@/hooks/use-daily-results-popup"
-import { saveMatch } from "@/lib/saveMatch"
 
 export type GameDifficulty = "easy" | "medium" | "hard"
 export type GameState = "wallet" | "game" | "results" | "ranking" | "daily-results"
@@ -155,8 +154,16 @@ function WharcAMoleContent() {
             day, // Include day in the entry
           }
           
-          // Save match to matches.json (for daily ranking)
-          saveMatch(address, data.score)
+          // Save match to matches.json (for daily ranking) via API
+          try {
+            await fetch("/api/saveMatch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ player: address, points: data.score })
+            })
+          } catch (err) {
+            console.error("Erro ao salvar pontos:", err)
+          }
           
           // Save to API
           const saved = await saveRanking(newEntry)

@@ -110,12 +110,12 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  // Fetch ranking from /api/getDailyRanking
+  // Fetch ranking from /api/rankings
   useEffect(() => {
     const fetchRanking = async () => {
       try {
         setLoading(true)
-        const res = await fetch("/api/getDailyRanking")
+        const res = await fetch("/api/rankings")
         if (!res.ok) throw new Error("Erro ao buscar ranking")
         const data = await res.json()
         setRanking(data || [])
