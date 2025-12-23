@@ -227,21 +227,25 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         
         // ✅ All contract values are BigInt
         const balanceRaw: bigint = await usdcContract.balanceOf(currentAddress)
-        const decimals = await usdcContract.decimals()
+        const decimalsRaw = await usdcContract.decimals()
+        
+        // ✅ Convert decimals to Number for calculations (decimals is small, safe to convert)
+        const decimals = Number(decimalsRaw)
         
         // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
-        const balanceAmount = Number(balanceRaw) / 10 ** decimals
+        const balanceAmount = Number(balanceRaw) / (10 ** decimals)
         
         if (balanceAmount === 0) {
           throw new Error(`No USDC found. You need USDC tokens (contract: ${USDC_CONTRACT_ADDRESS}) to purchase credits.`)
         }
         
         // Calculate cost - contract returns BigInt
+        // ✅ Convert amount to BigInt explicitly to avoid type mixing issues
         const contract = new Contract(GAME_CREDITS_ADDRESS, GAME_CREDITS_ABI, signer)
-        const costRaw: bigint = await contract.calculatePurchaseCost(amount)
+        const costRaw: bigint = await contract.calculatePurchaseCost(BigInt(amount))
         
         // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
-        const costAmount = Number(costRaw) / 10 ** decimals
+        const costAmount = Number(costRaw) / (10 ** decimals)
         
         // ✅ Check if user has enough USDC - comparison between BigInt only
         if (balanceRaw < costRaw) {
@@ -254,9 +258,9 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         // ✅ Comparison between BigInt only
         if (allowanceRaw < costRaw) {
           // Approve 1000 USDC (using the decimals from contract)
-          // Calculate 10^decimals using multiplication
+          // Calculate 10^decimals using multiplication (decimals is already Number)
           let decimalsMultiplier = BigInt(1)
-          for (let i = 0; i < Number(decimals); i++) {
+          for (let i = 0; i < decimals; i++) {
             decimalsMultiplier = decimalsMultiplier * BigInt(10)
           }
           const approveAmount = BigInt(1000) * decimalsMultiplier
@@ -269,7 +273,8 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         }
 
         // Purchase credits
-        const tx = await contract.purchaseCredits(amount)
+        // ✅ Convert amount to BigInt explicitly to avoid type mixing issues
+        const tx = await contract.purchaseCredits(BigInt(amount))
         
         // CRITICAL: Wait for transaction to be mined before updating UI
         const receipt = await tx.wait()
@@ -324,7 +329,8 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         const signer = await provider.getSigner()
         const contract = new Contract(GAME_CREDITS_ADDRESS, GAME_CREDITS_ABI, signer)
 
-        const tx = await contract.consumeCreditsSelf(clickCount)
+        // ✅ Convert clickCount to BigInt explicitly to avoid type mixing issues
+        const tx = await contract.consumeCreditsSelf(BigInt(clickCount))
         
         // Wait for transaction before updating
         await tx.wait()
