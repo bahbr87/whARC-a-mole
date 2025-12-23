@@ -1,99 +1,94 @@
-# whARC-a-mole Game
+# whARC-a-mole
 
-A blockchain arcade game built on Arc Network where players compete daily for USDC prizes!
+whARC-a-mole is a web game inspired by the classic whack-a-mole, developed to test load, transaction volume, and on-chain integration on the ARC Network.
 
-## 🌐 Arc Testnet Configuration
+Each player interaction (clicks on animals during a match) generates real transactions on the network, making the game a practical tool for stress testing and experimenting with blockchain infrastructure in a real environment.
 
-- **Chain ID**: `5042002`
-- **RPC URL**: `https://rpc.testnet.arc.network`
-- **Explorer**: `https://testnet.arcscan.app`
-- **⚠️ IMPORTANT**: Gas is paid in **USDC**, not ETH!
+## 🎮 How the game works
 
-## 💰 Getting Testnet USDC
+The player starts a match using credits.
 
-To deploy contracts and make transactions, you need USDC on Arc Testnet:
+During the match, animals appear randomly in the holes.
 
-1. **Visit Circle Faucet**: https://faucet.circle.com
-2. **Connect your wallet** (MetaMask/Rabby)
-3. **Select Arc Testnet** (Chain ID: 5042002)
-4. **Enter your wallet address** and request testnet USDC
-5. **Wait for confirmation** (may take a few minutes)
+The player must click the correct animals to score points.
 
-**Note**: You need USDC in your wallet to pay for gas fees!
+Incorrect clicks negatively impact the score.
 
-## 🚀 Getting Started
+Each match has a limited duration.
 
-### Prerequisites
+The scoring logic varies according to the selected difficulty level, as defined in the game code.
 
-- Node.js 18+ 
-- npm or yarn
-- MetaMask or Rabby wallet
-- USDC on Arc Testnet (from faucet)
+All rules related to scoring, timing, and animal behavior are controlled directly by the application code, not by external configuration.
 
-### Installation
+## 🧠 Difficulty levels
 
-```bash
-npm install
-```
+The game has three fixed difficulty levels:
 
-### Development
+- Easy
+- Medium
+- Hard
 
-```bash
-npm run dev
-```
+Each level changes factors such as:
 
-### Generate Deployer Wallet
+- Number of available holes.
+- Scoring rules.
 
-```bash
-npm run generate-wallet
-```
+These variations are implemented directly in the game logic.
 
-This will create a new wallet and save it to `.env.local`.
+## 🏆 Daily ranking
 
-### Deploy Contracts
+Each completed match generates a persistent record.
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
+Results are stored in a database (Supabase).
 
-## 🎮 How to Play
+The ranking is daily, considering only matches played on the current day.
 
-1. Connect your Arc wallet
-2. Choose a difficulty level (Easy, Medium, Hard)
-3. Click on moles to score points, avoid cows!
-4. Catch golden moles for bonus points
-5. Compete for daily prizes: 20, 10, 5 USDC
+Players are ranked by score.
 
-## 📝 Features
+This ensures that:
 
-- Daily rankings with UTC timezone
-- Prize claiming system (7-day window)
-- Multiple wallet support (MetaMask, Rabby, Coinbase, Trust)
-- Pause/resume game functionality
-- Difficulty-based scoring system
+- Data does not disappear between deploys.
+- The ranking works correctly in production on Vercel.
 
-## 🔧 Configuration
+## 💾 Data persistence
 
-Copy `.env.example.txt` to `.env.local` and configure:
+The project uses Supabase (PostgreSQL) for real data persistence:
 
-```env
-NEXT_PUBLIC_API_URL=/api
-USDC_CONTRACT_ADDRESS=0x... (after deployment)
-```
+Each match stores:
 
-## 📚 Documentation
+- Player identifier (wallet).
+- Final score.
+- Match timestamp.
 
-- [Deployment Guide](./DEPLOYMENT.md)
-- [Arc Network Docs](https://docs.arc.network/)
+Data remains stored indefinitely unless manually removed.
 
-## ⚠️ Important Notes
+## 🔗 Blockchain integration
 
-- Gas fees are paid in USDC (not ETH) on Arc Network
-- Get testnet USDC from: https://faucet.circle.com
-- Never commit private keys to git
-- This is a testnet deployment
+Each click on an animal during the game generates an on-chain transaction.
 
+The application connects to the ARC Network.
 
+The main goal of the project is to generate real transaction volume in a controlled and repeatable way.
 
+## 🛠️ Tech stack
 
+- Next.js (App Router)
+- React + TypeScript
+- Supabase (PostgreSQL)
+- Vercel (deployment and production)
+- ARC Network integration
+- Smart contracts
 
+## 🚀 Project goal
 
+- Test ARC Network performance.
+- Simulate real-world usage with multiple players.
+- Validate frontend, backend, and blockchain integration.
+- Build a solid foundation for future rankings and rewards.
 
+## ⚠️ Important notes
+
+- All game rules are defined in code.
+- There are no external gameplay configuration files.
+- The ranking depends exclusively on stored database data.
+- The project is designed to work correctly in production.
