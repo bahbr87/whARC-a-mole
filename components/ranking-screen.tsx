@@ -111,69 +111,27 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
   const maxPages = 10 // 500 players / 50 per page
 
   // Fetch ranking from /api/getDailyRanking
-  // Always fetch from API, never rely on local state
   useEffect(() => {
-    let mounted = true
-    
     const fetchRanking = async () => {
       try {
-        if (!mounted) return
         setLoading(true)
-        
-        // Add cache-busting to ensure fresh data on user change
-        const res = await fetch("/api/getDailyRanking", {
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache',
-          },
-        })
-        
-        if (!mounted) return
-        
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => 'Unknown error')
-          throw new Error(`Error fetching ranking: ${res.status} ${errorText}`)
-        }
-        
+        const res = await fetch("/api/getDailyRanking")
+        if (!res.ok) throw new Error("Erro ao buscar ranking")
         const data = await res.json()
-        
-        if (!mounted) return
-        
-        // Always update ranking from API response
-        if (Array.isArray(data)) {
-          setRanking(data)
-        } else if (data && Array.isArray(data.ranking)) {
-          // Handle case where API returns { ranking: [...] }
-          setRanking(data.ranking)
-        } else {
-          console.warn("Unexpected API response format:", data)
-          setRanking([])
-        }
+        setRanking(data || [])
       } catch (err) {
-        console.error("Error fetching ranking:", err)
-        // Don't clear ranking on error, keep previous data
-        // The ranking state will remain as is if there's an error
+        console.error("Erro ao carregar ranking:", err)
+        setRanking([]) // evita crash
       } finally {
-        if (mounted) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    // Always fetch immediately when component mounts or user changes
     fetchRanking()
     // Refresh every 30 seconds
-    const interval = setInterval(() => {
-      if (mounted) {
-        fetchRanking()
-      }
-    }, 30000)
-    
-    return () => {
-      mounted = false
-      clearInterval(interval)
-    }
-  }, []) // Empty deps - always fetch on mount
+    const interval = setInterval(fetchRanking, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
