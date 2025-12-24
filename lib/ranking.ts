@@ -1,6 +1,8 @@
 /**
  * Reusable ranking logic using Supabase
  * Handles daily rankings calculation from matches table
+ * 
+ * NO filesystem access - works on Vercel
  */
 
 import { supabase } from './supabase'
@@ -11,11 +13,11 @@ export interface RankingEntry {
 }
 
 /**
- * Get ranking for a specific day
- * @param day - "today" or "yesterday" (calculated in UTC)
+ * Get ranking for a specific date
+ * @param dateString - Date in format "YYYY-MM-DD" (UTC) or null for today
  * @returns Promise<RankingEntry[]> - Array of players with total points, sorted descending
  */
-export async function getRankingForDay(day: "today" | "yesterday"): Promise<RankingEntry[]> {
+export async function getRankingForDate(dateString: string | null): Promise<RankingEntry[]> {
   // Validate Supabase configuration
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('Supabase not configured')
@@ -23,23 +25,24 @@ export async function getRankingForDay(day: "today" | "yesterday"): Promise<Rank
   }
 
   try {
-    // Calculate target date in UTC
-    const now = new Date()
+    // Parse target date (default to today if not provided)
     let targetDate: Date
-
-    if (day === "today") {
-      // Today in UTC
+    
+    if (dateString) {
+      // Parse YYYY-MM-DD format
+      const [year, month, day] = dateString.split('-').map(Number)
+      if (isNaN(year) || isNaN(month) || isNaN(day)) {
+        console.error('Invalid date format. Expected YYYY-MM-DD')
+        return []
+      }
+      targetDate = new Date(Date.UTC(year, month - 1, day))
+    } else {
+      // Default to today in UTC
+      const now = new Date()
       targetDate = new Date(Date.UTC(
         now.getUTCFullYear(),
         now.getUTCMonth(),
         now.getUTCDate()
-      ))
-    } else {
-      // Yesterday in UTC
-      targetDate = new Date(Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate() - 1
       ))
     }
 
@@ -50,12 +53,13 @@ export async function getRankingForDay(day: "today" | "yesterday"): Promise<Rank
     const dayEnd = new Date(targetDate)
     dayEnd.setUTCHours(23, 59, 59, 999)
 
-    // Query Supabase matches table
+    // Query Supabase matches table using created_at (not timestamp)
+    // created_at is the column that Supabase uses for timestamps
     const { data, error } = await supabase
       .from('matches')
-      .select('player, points, timestamp')
-      .gte('timestamp', dayStart.toISOString())
-      .lte('timestamp', dayEnd.toISOString())
+      .select('player, points, created_at')
+      .gte('created_at', dayStart.toISOString())
+      .lte('created_at', dayEnd.toISOString())
 
     if (error) {
       console.error('Error fetching matches from Supabase:', error)
@@ -67,6 +71,7 @@ export async function getRankingForDay(day: "today" | "yesterday"): Promise<Rank
     }
 
     // Aggregate points by player (case-insensitive)
+    // Always lowercase wallet address when grouping
     const rankingMap: Record<string, number> = {}
     
     data.forEach((match) => {
@@ -88,7 +93,7 @@ export async function getRankingForDay(day: "today" | "yesterday"): Promise<Rank
 
     return ranking
   } catch (error) {
-    console.error('Error in getRankingForDay:', error)
+    console.error('Error in getRankingForDate:', error)
     return []
   }
 }

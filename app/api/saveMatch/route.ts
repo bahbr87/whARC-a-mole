@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+/**
+ * POST /api/saveMatch
+ * Saves a match to Supabase matches table
+ * 
+ * Fields saved:
+ * - player: string (lowercase wallet address)
+ * - points: number
+ * - created_at: timestamp (auto-set by Supabase default)
+ * 
+ * NO filesystem access - works on Vercel
+ */
 export async function POST(req: Request) {
   try {
     // Validate Supabase configuration at runtime
@@ -15,19 +26,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields: player and points' }, { status: 400 });
     }
 
-    // Normalize player to lowercase
+    // Normalize player to lowercase (for consistent grouping)
     const normalizedPlayer = player.toLowerCase();
 
-    // Use current UTC timestamp
-    const timestamp = new Date().toISOString();
-
     // Insert into Supabase matches table
+    // created_at will be set automatically by Supabase (default now())
+    // We don't pass timestamp - let Supabase handle it
     const { error } = await supabase
       .from('matches')
       .insert([{ 
         player: normalizedPlayer, 
-        points,
-        timestamp 
+        points
+        // created_at is handled by Supabase default
       }]);
 
     if (error) {

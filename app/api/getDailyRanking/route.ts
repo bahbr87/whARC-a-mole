@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
-import { getRankingForDay } from "@/lib/ranking";
+import { getRankingForDate } from "@/lib/ranking";
 
+/**
+ * GET /api/getDailyRanking
+ * 
+ * Returns daily ranking from Supabase matches table
+ * 
+ * Query parameters:
+ * - ?date=YYYY-MM-DD (optional) - Specific date to query (UTC)
+ *   If not provided, defaults to today's date (UTC)
+ * 
+ * Returns:
+ * [
+ *   { player: "0x123...", totalPoints: 130 },
+ *   { player: "0xabc...", totalPoints: 90 }
+ * ]
+ * 
+ * Sorted by totalPoints descending
+ * 
+ * NO filesystem access - works on Vercel
+ * All data comes from Supabase matches table using created_at column
+ */
 export async function GET(request: Request) {
   try {
     // Validate Supabase configuration at runtime
@@ -8,15 +28,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }
 
-    // Check for query parameter ?day=yesterday
+    // Parse query parameter ?date=YYYY-MM-DD
     const url = new URL(request.url);
-    const dayParam = url.searchParams.get("day");
+    const dateParam = url.searchParams.get("date");
     
-    // Determine which day to fetch
-    const day: "today" | "yesterday" = dayParam === "yesterday" ? "yesterday" : "today";
-
-    // Get ranking from Supabase using helper
-    const ranking = await getRankingForDay(day);
+    // Get ranking from Supabase
+    // If date not provided, getRankingForDate(null) defaults to today
+    const ranking = await getRankingForDate(dateParam);
 
     return NextResponse.json(ranking, {
       headers: {

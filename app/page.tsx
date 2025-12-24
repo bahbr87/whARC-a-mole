@@ -154,7 +154,7 @@ function WharcAMoleContent() {
             day, // Include day in the entry
           }
           
-          // Save match to matches.json (for daily ranking) via API
+          // Save match to Supabase (for daily ranking) via API
           try {
             await fetch("/api/saveMatch", {
               method: "POST",
