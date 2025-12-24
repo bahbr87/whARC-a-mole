@@ -1,55 +1,22 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { getRankingForDay } from "@/lib/ranking";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const filePath = path.join(process.cwd(), "data/matches.json");
+    // Validate Supabase configuration at runtime
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+    }
+
+    // Check for query parameter ?day=yesterday
+    const url = new URL(request.url);
+    const dayParam = url.searchParams.get("day");
     
-    // Read matches file or return empty array if it doesn't exist
-    let matches: Array<{ player: string; points: number; timestamp: string }> = [];
-    try {
-      if (fs.existsSync(filePath)) {
-        const data = fs.readFileSync(filePath, "utf-8");
-        if (data.trim()) {
-          matches = JSON.parse(data);
-        }
-      }
-    } catch (error: any) {
-      // If file doesn't exist or can't be read, return empty array
-      if (error.code === "ENOENT") {
-        return NextResponse.json([], {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
-      }
-      throw error;
-    }
+    // Determine which day to fetch
+    const day: "today" | "yesterday" = dayParam === "yesterday" ? "yesterday" : "today";
 
-    // Ensure matches is an array
-    if (!Array.isArray(matches)) {
-      matches = [];
-    }
-
-    // Use UTC for date filtering to ensure consistency across timezones
-    const now = new Date();
-    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-
-    const rankingMap: Record<string, number> = {};
-
-    matches.forEach((match: any) => {
-      const ts = new Date(match.timestamp).getTime();
-      if (ts >= todayStart.getTime() && ts <= todayEnd.getTime()) {
-        const player = match.player.toLowerCase();
-        rankingMap[player] = (rankingMap[player] || 0) + match.points;
-      }
-    });
-
-    const ranking = Object.entries(rankingMap)
-      .map(([player, totalPoints]) => ({ player, totalPoints }))
-      .sort((a, b) => b.totalPoints - a.totalPoints);
+    // Get ranking from Supabase using helper
+    const ranking = await getRankingForDay(day);
 
     return NextResponse.json(ranking, {
       headers: {

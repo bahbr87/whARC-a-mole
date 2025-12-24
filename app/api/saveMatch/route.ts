@@ -10,15 +10,34 @@ export async function POST(req: Request) {
 
     const { player, points } = await req.json();
 
+    // Validate required fields
+    if (!player || points === undefined) {
+      return NextResponse.json({ error: 'Missing required fields: player and points' }, { status: 400 });
+    }
+
+    // Normalize player to lowercase
+    const normalizedPlayer = player.toLowerCase();
+
+    // Use current UTC timestamp
+    const timestamp = new Date().toISOString();
+
+    // Insert into Supabase matches table
     const { error } = await supabase
       .from('matches')
-      .insert([{ player, points }]);
+      .insert([{ 
+        player: normalizedPlayer, 
+        points,
+        timestamp 
+      }]);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase insert error:', error);
+      throw error;
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error(err);
+    console.error('Error saving match:', err);
     return NextResponse.json({ error: 'Erro ao salvar partida' }, { status: 500 });
   }
 }
