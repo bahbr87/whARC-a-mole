@@ -53,13 +53,13 @@ export async function getRankingForDate(dateString: string | null): Promise<Rank
     const dayEnd = new Date(targetDate)
     dayEnd.setUTCHours(23, 59, 59, 999)
 
-    // Query Supabase matches table using created_at (not timestamp)
-    // created_at is the column that Supabase uses for timestamps
+    // Query Supabase matches table using timestamp column
+    // The database column is named 'timestamp', not 'created_at'
     const { data, error } = await supabase
       .from('matches')
-      .select('player, points, created_at')
-      .gte('created_at', dayStart.toISOString())
-      .lte('created_at', dayEnd.toISOString())
+      .select('player, points, timestamp')
+      .gte('timestamp', dayStart.toISOString())
+      .lte('timestamp', dayEnd.toISOString())
 
     if (error) {
       console.error('Error fetching matches from Supabase:', error)

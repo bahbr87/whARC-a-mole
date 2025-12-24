@@ -19,7 +19,7 @@ import { getRankingForDate } from "@/lib/ranking";
  * Sorted by totalPoints descending
  * 
  * NO filesystem access - works on Vercel
- * All data comes from Supabase matches table using created_at column
+ * All data comes from Supabase matches table using timestamp column
  */
 export async function GET(request: Request) {
   try {

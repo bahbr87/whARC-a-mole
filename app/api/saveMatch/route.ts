@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
  * Fields saved:
  * - player: string (lowercase wallet address)
  * - points: number
- * - created_at: timestamp (auto-set by Supabase default)
+ * - timestamp: timestamp (auto-set by Supabase default)
  * 
  * NO filesystem access - works on Vercel
  */
@@ -30,14 +30,14 @@ export async function POST(req: Request) {
     const normalizedPlayer = player.toLowerCase();
 
     // Insert into Supabase matches table
-    // created_at will be set automatically by Supabase (default now())
+    // timestamp will be set automatically by Supabase (default now())
     // We don't pass timestamp - let Supabase handle it
     const { error } = await supabase
       .from('matches')
       .insert([{ 
         player: normalizedPlayer, 
         points
-        // created_at is handled by Supabase default
+        // timestamp is handled by Supabase default
       }]);
 
     if (error) {
