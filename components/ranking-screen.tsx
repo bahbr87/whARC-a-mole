@@ -110,17 +110,60 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  // Fetch ranking from /api/rankings
+  // Helper function to format date as YYYY-MM-DD in UTC
+  const formatDateAsUTC = (date: Date): string => {
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  // Fetch ranking from /api/getDailyRanking with date parameter
   useEffect(() => {
     const fetchRanking = async () => {
       try {
         setLoading(true)
-        const res = await fetch("/api/rankings")
+        
+        // Determine which date to use: selectedDate or today (UTC)
+        let dateToUse: Date
+        if (selectedDate) {
+          dateToUse = selectedDate
+        } else {
+          // Use today in UTC
+          const now = new Date()
+          dateToUse = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate()
+          ))
+        }
+        
+        // Format date as YYYY-MM-DD (UTC)
+        const dateString = formatDateAsUTC(dateToUse)
+        
+        // Build URL with date parameter
+        const url = `/api/getDailyRanking?date=${dateString}`
+        
+        // Log the request
+        console.log(`📅 [RANKING-SCREEN] Fetching ranking:`)
+        console.log(`   Selected date: ${selectedDate ? selectedDate.toISOString() : 'null (using today)'}`)
+        console.log(`   Date to use (UTC): ${dateToUse.toISOString()}`)
+        console.log(`   Date string (YYYY-MM-DD): ${dateString}`)
+        console.log(`   URL: ${url}`)
+        
+        const res = await fetch(url)
         if (!res.ok) throw new Error("Erro ao buscar ranking")
         const data = await res.json()
+        
+        console.log(`✅ [RANKING-SCREEN] Ranking received:`)
+        console.log(`   Players count: ${data?.length || 0}`)
+        if (data && data.length > 0) {
+          console.log(`   Top 3: ${data.slice(0, 3).map((r: any) => `${r.player}: ${r.totalPoints}`).join(', ')}`)
+        }
+        
         setRanking(data || [])
       } catch (err) {
-        console.error("Erro ao carregar ranking:", err)
+        console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
         setRanking([]) // evita crash
       } finally {
         setLoading(false)
@@ -131,7 +174,7 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
     // Refresh every 30 seconds
     const interval = setInterval(fetchRanking, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [selectedDate])
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
@@ -181,7 +224,11 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
           <div className="flex items-center justify-center gap-4 text-amber-900 flex-wrap">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              <span className="font-bold text-lg">Today: {getTodayDisplay()}</span>
+              <span className="font-bold text-lg">
+                {selectedDate 
+                  ? `Showing: ${formatDateAsUTC(selectedDate)} (UTC)`
+                  : `Today: ${getTodayDisplay()}`}
+              </span>
             </div>
             {onViewDailyResults && (
               <>
@@ -195,8 +242,21 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
                   className="border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-transparent"
                 >
                   <Calendar className="w-4 h-4 mr-2" />
-                  View Past Results
+                  {selectedDate ? "Change Date" : "View Past Results"}
                 </Button>
+                {selectedDate && (
+                  <Button
+                    onClick={() => {
+                      playClickSound()
+                      setSelectedDate(undefined)
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-transparent"
+                  >
+                    Show Today
+                  </Button>
+                )}
                 <Dialog open={showCalendarDialog} onOpenChange={setShowCalendarDialog}>
                   <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
@@ -207,7 +267,6 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
                         mode="single"
                         selected={selectedDate}
                         onSelect={(date) => {
-                          setSelectedDate(date)
                           if (date) {
                             // Set time to UTC midnight
                             const utcDate = new Date(Date.UTC(
@@ -216,9 +275,14 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
                               date.getUTCDate(),
                               0, 0, 0, 0
                             ))
-                            onViewDailyResults(utcDate)
+                            // Update selectedDate to filter ranking
+                            setSelectedDate(utcDate)
                             setShowCalendarDialog(false)
-                            setSelectedDate(undefined)
+                            
+                            // Also call onViewDailyResults if provided (for navigation to detailed view)
+                            if (onViewDailyResults) {
+                              onViewDailyResults(utcDate)
+                            }
                           }
                         }}
                         disabled={(date) => {
@@ -289,7 +353,11 @@ export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDai
               </div>
             ) : ranking.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-600">No players found for today.</p>
+                <p className="text-gray-600">
+                  {selectedDate 
+                    ? `No players found for ${formatDateAsUTC(selectedDate)}.`
+                    : "No players found for today."}
+                </p>
               </div>
             ) : (
               <table className="w-full">

@@ -32,9 +32,18 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const dateParam = url.searchParams.get("date");
     
+    console.log(`🌐 [GET-DAILY-RANKING] Request received:`)
+    console.log(`   URL: ${request.url}`)
+    console.log(`   Date param: ${dateParam || 'null (defaulting to today)'}`)
+    
     // Get ranking from Supabase
     // If date not provided, getRankingForDate(null) defaults to today
     const ranking = await getRankingForDate(dateParam);
+    
+    console.log(`✅ [GET-DAILY-RANKING] Returning ${ranking.length} players`)
+    if (ranking.length > 0) {
+      console.log(`   Top 3: ${ranking.slice(0, 3).map(r => `${r.player}: ${r.totalPoints}`).join(', ')}`)
+    }
 
     return NextResponse.json(ranking, {
       headers: {
