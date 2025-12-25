@@ -55,7 +55,36 @@ export async function getRankingForDate(dateString: string | null): Promise<Rank
     console.log("🔍 [RANKING-DEBUG]   .gte('timestamp', '" + queryStart + "')");
     console.log("🔍 [RANKING-DEBUG]   .lte('timestamp', '" + queryEnd + "')");
 
-    const { data, error } = await supabase
+    // First, try to get ALL columns to see what actually exists
+    const { data: allColumnsData } = await supabase
+      .from("matches")
+      .select("*")
+      .limit(1);
+    
+    if (allColumnsData && allColumnsData.length > 0) {
+      console.log("🔍 [RANKING-DEBUG] Sample row with all columns:", JSON.stringify(allColumnsData[0], null, 2));
+      console.log("🔍 [RANKING-DEBUG] Available columns:", Object.keys(allColumnsData[0]));
+      
+      // Check if timestamp column exists
+      const hasTimestamp = 'timestamp' in allColumnsData[0];
+      const hasCreatedAt = 'created_at' in allColumnsData[0];
+      console.log("🔍 [RANKING-DEBUG] Has 'timestamp' column?", hasTimestamp);
+      console.log("🔍 [RANKING-DEBUG] Has 'created_at' column?", hasCreatedAt);
+      
+      if (allColumnsData[0].timestamp) {
+        console.log("🔍 [RANKING-DEBUG] Sample timestamp value:", allColumnsData[0].timestamp);
+        console.log("🔍 [RANKING-DEBUG] Sample timestamp type:", typeof allColumnsData[0].timestamp);
+      }
+      if (allColumnsData[0].created_at) {
+        console.log("🔍 [RANKING-DEBUG] Sample created_at value:", allColumnsData[0].created_at);
+        console.log("🔍 [RANKING-DEBUG] Sample created_at type:", typeof allColumnsData[0].created_at);
+      }
+    } else {
+      console.log("🔍 [RANKING-DEBUG] No rows found in matches table");
+    }
+
+    // Try query with timestamp column
+    let { data, error } = await supabase
       .from("matches")
       .select("player, points, timestamp")
       .gte("timestamp", queryStart)
@@ -64,9 +93,39 @@ export async function getRankingForDate(dateString: string | null): Promise<Rank
     // ============================================
     // LOG 4: Quantidade de linhas retornadas
     // ============================================
-    console.log("🔍 [RANKING-DEBUG] Query executed");
+    console.log("🔍 [RANKING-DEBUG] Query executed (using 'timestamp' column)");
     console.log("🔍 [RANKING-DEBUG] Rows returned:", data?.length || 0);
     console.log("🔍 [RANKING-DEBUG] Error:", error ? JSON.stringify(error, null, 2) : "null");
+
+    // If error or no data, try with created_at as fallback
+    if (error || !data || data.length === 0) {
+      if (error) {
+        console.log("🔍 [RANKING-DEBUG] Query with 'timestamp' failed, trying 'created_at'...");
+        console.log("🔍 [RANKING-DEBUG] Error message:", error.message);
+      } else {
+        console.log("🔍 [RANKING-DEBUG] No data with 'timestamp', trying 'created_at'...");
+      }
+      
+      const { data: dataCreatedAt, error: errorCreatedAt } = await supabase
+        .from("matches")
+        .select("player, points, created_at")
+        .gte("created_at", queryStart)
+        .lte("created_at", queryEnd);
+      
+      if (!errorCreatedAt && dataCreatedAt && dataCreatedAt.length > 0) {
+        console.log("🔍 [RANKING-DEBUG] Found data using 'created_at' column!");
+        console.log("🔍 [RANKING-DEBUG] Rows returned (created_at):", dataCreatedAt.length);
+        // Map created_at to timestamp for consistency
+        data = dataCreatedAt.map(row => ({
+          player: row.player,
+          points: row.points,
+          timestamp: row.created_at
+        }));
+        error = null;
+      } else if (errorCreatedAt) {
+        console.log("🔍 [RANKING-DEBUG] Query with 'created_at' also failed:", errorCreatedAt.message);
+      }
+    }
 
     if (error) {
       console.error("🔍 [RANKING-DEBUG] Supabase error details:", error);
