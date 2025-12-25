@@ -1,57 +1,44 @@
-import { NextResponse } from "next/server";
-import { getRankingForDate } from "@/lib/ranking";
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db'; // ajuste para seu client/db real
 
-/**
- * GET /api/getDailyRanking
- * 
- * Returns daily ranking from Supabase matches table
- * 
- * Query parameters:
- * - ?date=YYYY-MM-DD (optional) - Specific date to query (UTC)
- *   If not provided, defaults to today's date (UTC)
- * 
- * Returns:
- * [
- *   { player: "0x123...", totalPoints: 130 },
- *   { player: "0xabc...", totalPoints: 90 }
- * ]
- * 
- * Sorted by totalPoints descending
- * 
- * NO filesystem access - works on Vercel
- * All data comes from Supabase matches table using timestamp column
- */
 export async function GET(request: Request) {
   try {
-    // Validate Supabase configuration at runtime
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+    const { searchParams } = new URL(request.url);
+    const dateParam = searchParams.get('date');
+
+    if (!dateParam) {
+      return NextResponse.json({ error: 'Date parameter is required' }, { status: 400 });
     }
 
-    // Parse query parameter ?date=YYYY-MM-DD
-    const url = new URL(request.url);
-    const dateParam = url.searchParams.get("date");
-    
-    console.log(`🌐 [GET-DAILY-RANKING] Request received:`)
-    console.log(`   URL: ${request.url}`)
-    console.log(`   Date param: ${dateParam || 'null (defaulting to today)'}`)
-    
-    // Get ranking from Supabase
-    // If date not provided, getRankingForDate(null) defaults to today
-    const ranking = await getRankingForDate(dateParam);
-    
-    console.log(`✅ [GET-DAILY-RANKING] Returning ${ranking.length} players`)
-    if (ranking.length > 0) {
-      console.log(`   Top 3: ${ranking.slice(0, 3).map(r => `${r.player}: ${r.totalPoints}`).join(', ')}`)
-    }
+    console.log('🔍 [RANKING-DEBUG] Date string received:', dateParam);
 
-    return NextResponse.json(ranking, {
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-      },
-    });
+    // Cria range UTC do dia
+    const dayStart = new Date(`${dateParam}T00:00:00Z`);
+    const dayEnd = new Date(`${dateParam}T23:59:59.999Z`);
+
+    console.log('🔍 [RANKING-DEBUG] Day start (UTC):', dayStart.toISOString());
+    console.log('🔍 [RANKING-DEBUG] Day end (UTC):', dayEnd.toISOString());
+
+    // Query no banco
+    const players = await db
+      .selectFrom('ranking') // ajuste para sua tabela real
+      .select(['player', 'totalPoints', 'timestamp'])
+      .where('timestamp', '>=', dayStart.toISOString())
+      .where('timestamp', '<=', dayEnd.toISOString())
+      .orderBy('totalPoints', 'desc')
+      .execute();
+
+    console.log('🔍 [RANKING-DEBUG] Rows returned:', players.length);
+
+    // Retorna apenas player + totalPoints
+    const result = players.map(p => ({
+      player: p.player,
+      totalPoints: p.totalPoints,
+    }));
+
+    return NextResponse.json(result);
   } catch (err) {
-    console.error("Erro ao gerar ranking:", err);
-    return NextResponse.json({ error: "Erro ao gerar ranking" }, { status: 500 });
+    console.error('🔍 [RANKING-DEBUG] Error:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
