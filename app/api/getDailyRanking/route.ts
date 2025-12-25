@@ -33,12 +33,12 @@ export async function GET(request: Request) {
     }
 
     if (!matches || matches.length === 0) {
-      return NextResponse.json({ message: 'No players found for this day', players: [] });
+      return NextResponse.json([]);
     }
 
     // Aggregate points by player (case-insensitive)
     const rankingMap: Record<string, number> = {};
-    matches.forEach((match) => {
+    matches.forEach((match: { player: string; points: number; timestamp: string }) => {
       const player = match.player.toLowerCase();
       const points = match.points || 0;
       rankingMap[player] = (rankingMap[player] || 0) + points;
