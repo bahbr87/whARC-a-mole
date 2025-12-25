@@ -101,7 +101,7 @@ const getTodayDisplay = () => {
   }) + " (UTC)"
 }
 
-export function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults }: RankingScreenProps) {
+export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults }: RankingScreenProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
