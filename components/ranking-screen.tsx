@@ -20,19 +20,41 @@ export default function RankingScreen({ selectedDate }: RankingScreenProps) {
     setLoading(true);
     setError(null);
 
+    console.log('[RANKING-SCREEN] Fetching ranking for date:', selectedDate);
+
     fetch(`/api/getDailyRanking?date=${selectedDate}`)
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then(data => {
-        if (!Array.isArray(data)) {
+        console.log('[RANKING-SCREEN] Response received:', data);
+        
+        // Handle new consistent format: { date: "YYYY-MM-DD", players: [...] }
+        if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
+          setPlayers(data.players);
+          if (data.error) {
+            console.warn('[RANKING-SCREEN] API returned error but also data:', data.error);
+            setError(data.error);
+          }
+        } 
+        // Fallback: handle old format (array directly) for backward compatibility
+        else if (Array.isArray(data)) {
+          console.warn('[RANKING-SCREEN] Received old format (array), converting...');
+          setPlayers(data);
+        } 
+        else {
+          console.error('[RANKING-SCREEN] Invalid response format:', data);
           setError('Erro: formato de dados inválido da API');
           setPlayers([]);
-        } else {
-          setPlayers(data);
         }
       })
       .catch(err => {
-        console.error(err);
-        setError('Erro ao buscar ranking');
+        console.error('[RANKING-SCREEN] Fetch error:', err);
+        setError(err.message || 'Erro ao buscar ranking');
         setPlayers([]);
       })
       .finally(() => setLoading(false));
