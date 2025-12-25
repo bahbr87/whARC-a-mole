@@ -38,17 +38,9 @@ export default function RankingScreen({ selectedDate }: RankingScreenProps) {
       .finally(() => setLoading(false));
   }, [selectedDate]);
 
-  if (loading) {
-    return <p>Carregando ranking...</p>;
-  }
-
-  if (error) {
-    return <p>{error}</p>;
-  }
-
-  if (!players || players.length === 0) {
-    return <p>No players found for this day.</p>;
-  }
+  if (loading) return <p>Carregando ranking...</p>;
+  if (error) return <p>{error}</p>;
+  if (!players || players.length === 0) return <p>No players found for this day.</p>;
 
   return (
     <div>
