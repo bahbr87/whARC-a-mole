@@ -30,14 +30,15 @@ export async function POST(req: Request) {
     const normalizedPlayer = player.toLowerCase();
 
     // Insert into Supabase matches table
-    // timestamp will be set automatically by Supabase (default now())
-    // We don't pass timestamp - let Supabase handle it
+    // Explicitly set timestamp to ensure it's in UTC and matches the column name
+    const timestamp = new Date().toISOString();
+    
     const { error } = await supabase
       .from('matches')
       .insert([{ 
         player: normalizedPlayer, 
-        points
-        // timestamp is handled by Supabase default
+        points,
+        timestamp // Explicitly set timestamp column
       }]);
 
     if (error) {
