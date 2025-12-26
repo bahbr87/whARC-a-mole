@@ -87,8 +87,7 @@ export async function GET(request: Request) {
     const { data: matches, error } = await supabase
       .from('matches')
       .select('player, points, timestamp')
-      .gte('timestamp', dayStartISO)
-      .lte('timestamp', dayEndISO);
+      .eq('timestamp::date', dateString);
 
     console.log('🔥 [RANKING] Matches returned from DB:', matches?.length);
     console.log(matches);
