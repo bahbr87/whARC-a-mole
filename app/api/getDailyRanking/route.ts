@@ -43,6 +43,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const dateParam = url.searchParams.get('date');
 
+    console.log('🔥 [RANKING] API called with date param:', dateParam);
+
     // Determine target date (default to today if not provided)
     let targetDate: Date;
     let dateString: string;
@@ -88,6 +90,9 @@ export async function GET(request: Request) {
       .gte('timestamp', dayStartISO)
       .lte('timestamp', dayEndISO);
 
+    console.log('🔥 [RANKING] Matches returned from DB:', matches?.length);
+    console.log(matches);
+
     if (error) {
       console.error('[GET-DAILY-RANKING] Supabase query error:', error);
       console.error('  Error details:', JSON.stringify(error, null, 2));
@@ -123,6 +128,8 @@ export async function GET(request: Request) {
     if (players.length > 0) {
       console.log('  Top 3:', players.slice(0, 3).map(p => `${p.player}: ${p.totalPoints}`).join(', '));
     }
+
+    console.log('🔥 [RANKING] Final players array:', players);
 
     // Always return consistent format
     return NextResponse.json({ date: dateString, players });
