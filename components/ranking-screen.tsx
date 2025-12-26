@@ -110,7 +110,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
-  // This ensures the ranking loads immediately on first render
   const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
   
   const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
@@ -119,58 +118,59 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  // Fetch ranking from /api/getDailyRanking immediately on mount and when displayDate changes
-  useEffect(() => {
-    const fetchRanking = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        
-        const url = `/api/getDailyRanking?date=${displayDate}`
-        console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${displayDate}, URL: ${url}`)
-        const res = await fetch(url)
-        
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}))
-          throw new Error(errorData.error || `HTTP ${res.status}`)
-        }
-        
-        const data = await res.json()
-        console.log(`✅ [RANKING-SCREEN] Response received for ${displayDate}:`, data)
-        
-        // Handle new format: { date: "YYYY-MM-DD", players: [...] }
-        if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
-          setRanking(data.players)
-          // Update display date if provided by API
-          if (data.date && data.date !== displayDate) {
-            setDisplayDate(data.date)
-          }
-        } 
-        // Fallback: handle old format (array directly) for backward compatibility
-        else if (Array.isArray(data)) {
-          setRanking(data)
-        } 
-        else {
-          throw new Error('Invalid response format from API')
-        }
-      } catch (err) {
-        console.error("Erro ao carregar ranking:", err)
-        setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
-        setRanking([])
-      } finally {
-        setLoading(false)
+  // Function to load ranking for a specific date
+  const loadRanking = async (date: string) => {
+    try {
+      setLoading(true)
+      setRanking([])
+      setError(null)
+      
+      const url = `/api/getDailyRanking?date=${date}`
+      console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${date}, URL: ${url}`)
+      const res = await fetch(url)
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${res.status}`)
       }
+      
+      const data = await res.json()
+      console.log(`✅ [RANKING-SCREEN] Response received for ${date}:`, data)
+      
+      // Handle new format: { date: "YYYY-MM-DD", players: [...] }
+      if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
+        setRanking(data.players)
+        // Update display date if provided by API
+        if (data.date && data.date !== date) {
+          setDisplayDate(data.date)
+        } else {
+          setDisplayDate(date)
+        }
+      } 
+      // Fallback: handle old format (array directly) for backward compatibility
+      else if (Array.isArray(data)) {
+        setRanking(data)
+        setDisplayDate(date)
+      } 
+      else {
+        throw new Error('Invalid response format from API')
+      }
+    } catch (err) {
+      console.error("Erro ao carregar ranking:", err)
+      setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
+      setRanking([])
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchRanking()
-  }, [displayDate])
-
-  // Update displayDate when selectedDate prop changes
+  // Load ranking on mount and when selectedDate prop changes
   useEffect(() => {
-    if (selectedDate && selectedDate !== displayDate) {
-      setDisplayDate(selectedDate)
-    }
-  }, [selectedDate, displayDate])
+    const dateToLoad = selectedDate || getTodayDateString()
+    setCurrentPage(1) // Reset page when date changes
+    loadRanking(dateToLoad)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]) // Run on mount and when selectedDate changes
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
@@ -203,10 +203,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const day = String(date.getUTCDate()).padStart(2, '0')
       const dateString = `${year}-${month}-${day}`
       
-      setDisplayDate(dateString)
+      setCurrentPage(1) // Reset to first page when changing date
       setShowCalendarDialog(false)
       setCalendarSelectedDate(undefined)
-      setCurrentPage(1) // Reset to first page when changing date
+      
+      // Load ranking immediately for the selected date
+      loadRanking(dateString)
       
       // If onViewDailyResults is provided, call it with the UTC date
       if (onViewDailyResults) {
@@ -250,8 +252,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   <Button
                     onClick={() => {
                       playClickSound()
-                      setDisplayDate(getTodayDateString())
+                      const today = getTodayDateString()
                       setCurrentPage(1)
+                      loadRanking(today)
                     }}
                     variant="link"
                     size="sm"
