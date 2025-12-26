@@ -428,6 +428,10 @@ function WharcAMoleContent() {
 
       {gameState === "ranking" && (
         <RankingScreen 
+          currentPlayer={address}
+          onBack={handleBackToGame}
+          playerRankings={rankings}
+          onViewDailyResults={handleViewDailyResults}
           selectedDate={selectedDate.toISOString().split('T')[0]}
         />
       )}

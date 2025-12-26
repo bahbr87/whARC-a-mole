@@ -71,6 +71,7 @@ interface RankingScreenProps {
   onBack: () => void
   playerRankings: RankingEntry[]
   onViewDailyResults?: (date: Date) => void
+  selectedDate?: string // formato 'YYYY-MM-DD' - opcional, usa hoje se não fornecido
 }
 
 const formatAddress = (address: string) => {
@@ -78,60 +79,96 @@ const formatAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-
-// Get start and end of day in UTC
-const getUTCDayStart = (date: Date) => {
-  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0))
-  return utcDate.getTime()
+// Format date for display
+const formatDateForDisplay = (dateString: string) => {
+  try {
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    }) + " (UTC)"
+  } catch {
+    return dateString
+  }
 }
 
-const getUTCDayEnd = (date: Date) => {
-  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999))
-  return utcDate.getTime()
-}
-
-const getTodayDisplay = () => {
+// Get today's date in YYYY-MM-DD format (UTC)
+const getTodayDateString = () => {
   const now = new Date()
-  return now.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  }) + " (UTC)"
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    .toISOString()
+    .split('T')[0]
 }
 
-export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults }: RankingScreenProps) {
+export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults, selectedDate }: RankingScreenProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
+  
+  // Use selectedDate prop or default to today
+  const targetDate = selectedDate || getTodayDateString()
+  const [displayDate, setDisplayDate] = useState(targetDate)
+  
   const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  // Fetch ranking from /api/rankings
+  // Fetch ranking from /api/getDailyRanking when displayDate changes
   useEffect(() => {
     const fetchRanking = async () => {
       try {
         setLoading(true)
-        const res = await fetch("/api/rankings")
-        if (!res.ok) throw new Error("Erro ao buscar ranking")
+        setError(null)
+        
+        const url = `/api/getDailyRanking?date=${displayDate}`
+        const res = await fetch(url)
+        
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}))
+          throw new Error(errorData.error || `HTTP ${res.status}`)
+        }
+        
         const data = await res.json()
-        setRanking(data || [])
+        
+        // Handle new format: { date: "YYYY-MM-DD", players: [...] }
+        if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
+          setRanking(data.players)
+          // Update display date if provided by API
+          if (data.date && data.date !== displayDate) {
+            setDisplayDate(data.date)
+          }
+        } 
+        // Fallback: handle old format (array directly) for backward compatibility
+        else if (Array.isArray(data)) {
+          setRanking(data)
+        } 
+        else {
+          throw new Error('Invalid response format from API')
+        }
       } catch (err) {
         console.error("Erro ao carregar ranking:", err)
-        setRanking([]) // evita crash
+        setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
+        setRanking([])
       } finally {
         setLoading(false)
       }
     }
 
     fetchRanking()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchRanking, 30000)
-    return () => clearInterval(interval)
-  }, [])
+  }, [displayDate])
+
+  // Update displayDate when selectedDate prop changes
+  useEffect(() => {
+    if (selectedDate) {
+      setDisplayDate(selectedDate)
+    }
+  }, [selectedDate])
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
@@ -152,6 +189,28 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [rankings, currentPage])
 
   const totalPages = Math.min(maxPages, Math.ceil(rankings.length / itemsPerPage))
+
+  // Handle calendar date selection
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      // Convert to UTC date string (YYYY-MM-DD)
+      const year = date.getUTCFullYear()
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(date.getUTCDate()).padStart(2, '0')
+      const dateString = `${year}-${month}-${day}`
+      
+      setDisplayDate(dateString)
+      setShowCalendarDialog(false)
+      setCalendarSelectedDate(undefined)
+      setCurrentPage(1) // Reset to first page when changing date
+      
+      // If onViewDailyResults is provided, call it with the UTC date
+      if (onViewDailyResults) {
+        const utcDate = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0))
+        onViewDailyResults(utcDate)
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen p-4">
@@ -181,61 +240,50 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
           <div className="flex items-center justify-center gap-4 text-amber-900 flex-wrap">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              <span className="font-bold text-lg">Today: {getTodayDisplay()}</span>
+              <span className="font-bold text-lg">
+                Ranking de {formatDateForDisplay(displayDate)}
+                {onViewDailyResults && (
+                  <Button
+                    onClick={() => {
+                      playClickSound()
+                      setShowCalendarDialog(true)
+                    }}
+                    variant="link"
+                    size="sm"
+                    className="ml-2 text-amber-700 hover:text-amber-900 underline h-auto p-0 font-normal"
+                  >
+                    (Show last results)
+                  </Button>
+                )}
+              </span>
             </div>
-            {onViewDailyResults && (
-              <>
-                <Button
-                  onClick={() => {
-                    playClickSound()
-                    setShowCalendarDialog(true)
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-transparent"
-                >
-                  <Calendar className="w-4 h-4 mr-2" />
-                  View Past Results
-                </Button>
-                <Dialog open={showCalendarDialog} onOpenChange={setShowCalendarDialog}>
-                  <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                      <DialogTitle>Select a Date</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex justify-center p-4">
-                      <CalendarComponent
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => {
-                          setSelectedDate(date)
-                          if (date) {
-                            // Set time to UTC midnight
-                            const utcDate = new Date(Date.UTC(
-                              date.getUTCFullYear(),
-                              date.getUTCMonth(),
-                              date.getUTCDate(),
-                              0, 0, 0, 0
-                            ))
-                            onViewDailyResults(utcDate)
-                            setShowCalendarDialog(false)
-                            setSelectedDate(undefined)
-                          }
-                        }}
-                        disabled={(date) => {
-                          // Disable future dates
-                          const today = new Date()
-                          today.setUTCHours(23, 59, 59, 999)
-                          return date > today
-                        }}
-                        className="rounded-md border"
-                      />
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </>
-            )}
           </div>
         </Card>
+
+        {/* Calendar Dialog */}
+        {onViewDailyResults && (
+          <Dialog open={showCalendarDialog} onOpenChange={setShowCalendarDialog}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Select a Date</DialogTitle>
+              </DialogHeader>
+              <div className="flex justify-center p-4">
+                <CalendarComponent
+                  mode="single"
+                  selected={calendarSelectedDate}
+                  onSelect={handleDateSelect}
+                  disabled={(date) => {
+                    // Disable future dates
+                    const today = new Date()
+                    today.setUTCHours(23, 59, 59, 999)
+                    return date > today
+                  }}
+                  className="rounded-md border"
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
 
         <Card className="p-6 bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-4 border-blue-700">
           <div className="text-center space-y-3">
@@ -279,7 +327,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
           </div>
         </Card>
 
-
         {/* Rankings Table */}
         <Card className="bg-white/95 backdrop-blur border-4 border-amber-900 overflow-hidden">
           <div className="overflow-x-auto">
@@ -287,9 +334,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               <div className="text-center py-8">
                 <p className="text-gray-600">Loading ranking...</p>
               </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-red-600">{error}</p>
+              </div>
             ) : ranking.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-600">No players found for today.</p>
+                <p className="text-gray-600">No players found for this day.</p>
               </div>
             ) : (
               <table className="w-full">
