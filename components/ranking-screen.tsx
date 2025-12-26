@@ -109,9 +109,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
-  // Use selectedDate prop or default to today
-  const targetDate = selectedDate || getTodayDateString()
-  const [displayDate, setDisplayDate] = useState(targetDate)
+  // Initialize displayDate with selectedDate prop or default to today
+  // This ensures the ranking loads immediately on first render
+  const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
   
   const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
   const [loading, setLoading] = useState(true)
@@ -119,7 +119,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
-  // Fetch ranking from /api/getDailyRanking when displayDate changes
+  // Fetch ranking from /api/getDailyRanking immediately on mount and when displayDate changes
   useEffect(() => {
     const fetchRanking = async () => {
       try {
@@ -127,6 +127,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         setError(null)
         
         const url = `/api/getDailyRanking?date=${displayDate}`
+        console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${displayDate}, URL: ${url}`)
         const res = await fetch(url)
         
         if (!res.ok) {
@@ -135,6 +136,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         }
         
         const data = await res.json()
+        console.log(`✅ [RANKING-SCREEN] Response received for ${displayDate}:`, data)
         
         // Handle new format: { date: "YYYY-MM-DD", players: [...] }
         if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
@@ -165,10 +167,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // Update displayDate when selectedDate prop changes
   useEffect(() => {
-    if (selectedDate) {
+    if (selectedDate && selectedDate !== displayDate) {
       setDisplayDate(selectedDate)
     }
-  }, [selectedDate])
+  }, [selectedDate, displayDate])
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
@@ -189,6 +191,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [rankings, currentPage])
 
   const totalPages = Math.min(maxPages, Math.ceil(rankings.length / itemsPerPage))
+
+  const isTodaySelected = displayDate === getTodayDateString()
 
   // Handle calendar date selection
   const handleDateSelect = (date: Date | undefined) => {
@@ -242,17 +246,32 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               <Calendar className="w-5 h-5" />
               <span className="font-bold text-lg">
                 Ranking de {formatDateForDisplay(displayDate)}
+                {!isTodaySelected && (
+                  <Button
+                    onClick={() => {
+                      playClickSound()
+                      setDisplayDate(getTodayDateString())
+                      setCurrentPage(1)
+                    }}
+                    variant="link"
+                    size="sm"
+                    className="ml-2 text-amber-700 hover:text-amber-900 underline h-auto p-0 font-normal"
+                  >
+                    (Show Today)
+                  </Button>
+                )}
                 {onViewDailyResults && (
                   <Button
                     onClick={() => {
                       playClickSound()
                       setShowCalendarDialog(true)
                     }}
-                    variant="link"
+                    variant="outline"
                     size="sm"
-                    className="ml-2 text-amber-700 hover:text-amber-900 underline h-auto p-0 font-normal"
+                    className="ml-2 border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-transparent"
                   >
-                    (Show last results)
+                    <Calendar className="w-4 h-4 mr-2" />
+                    View Past Results
                   </Button>
                 )}
               </span>
