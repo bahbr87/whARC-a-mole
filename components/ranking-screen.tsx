@@ -230,40 +230,26 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // Load ranking on mount and when selectedDate prop changes
   useEffect(() => {
-    // Ensure we have a valid date string
     const today = getTodayDateString()
-    const dateToLoad = selectedDate && selectedDate.trim() !== '' ? selectedDate : today
-    
-    // Skip if we already have data for this date and we're not loading
-    if (displayDate === dateToLoad && ranking.length > 0 && !loading) {
-      console.log(`⏸️ [RANKING-SCREEN] Skipping loadRanking - already have data for ${dateToLoad}`)
-      return
-    }
-    
-    // Skip if already loading the same date
-    if (isLoadingRef.current && lastLoadedDateRef.current === dateToLoad) {
-      console.log(`⏸️ [RANKING-SCREEN] Skipping loadRanking - already loading ${dateToLoad}`)
-      return
-    }
-    
-    console.log(`🔄 [RANKING-SCREEN] useEffect triggered`)
-    console.log(`   - selectedDate prop: ${selectedDate}`)
-    console.log(`   - today: ${today}`)
-    console.log(`   - dateToLoad: ${dateToLoad}`)
-    console.log(`   - current displayDate: ${displayDate}`)
-    console.log(`   - current ranking.length: ${ranking.length}`)
-    console.log(`   - current loading: ${loading}`)
-    console.log(`   - calling loadRanking with date: ${dateToLoad}`)
-    
-    setCurrentPage(1) // Reset page when date changes
-    setDisplayDate(dateToLoad) // Update display date immediately
-    
-    // Call loadRanking and log the promise
+    const dateToLoad =
+      selectedDate && selectedDate.trim() !== "" ? selectedDate : today
+
+    console.log(
+      "[RANKING-SCREEN] useEffect loading ranking for date:",
+      dateToLoad
+    )
+
+    setCurrentPage(1)
+
+    // Não atualize displayDate aqui — o loadRanking já faz isso
     loadRanking(dateToLoad).catch((err) => {
-      console.error(`❌ [RANKING-SCREEN] loadRanking promise rejected:`, err)
+      console.error(
+        "[RANKING-SCREEN] loadRanking promise rejected inside useEffect:",
+        err
+      )
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]) // Only depend on selectedDate to avoid infinite loops
+  }, [selectedDate])
 
   const rankings = useMemo(() => {
     console.log(`🔄 [RANKING-SCREEN] useMemo rankings - ranking.length: ${ranking.length}`)
