@@ -87,12 +87,11 @@ type Player = {
 interface RankingEntry {
   rank: number
   address: string
-  score: number
+  points: number
   goldenMoles?: number
   errors?: number
   claimed?: boolean
-  day: number // adicione o day do ranking
-  canClaim?: boolean // indica se o jogador pode fazer claim
+  day: number
 }
 
 const formatAddress = (address: string) => {
@@ -175,18 +174,24 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         throw new Error(errorData.error || `HTTP ${res.status}`)
       }
       
-      const data: RankingEntry[] = await res.json()
-      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, data)
+      const response = await res.json()
+      const topPlayers = response.topPlayers || []
+      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, topPlayers)
       
-      // Enrich with canClaim logic
-      const enriched = data.map(p => {
-        const canClaim = selectedDay < todayDayId && p.rank <= 3 && !p.claimed && (p.address?.toLowerCase() || "") === (currentPlayer?.toLowerCase() || "")
-        return { ...p, canClaim }
-      })
+      // Map topPlayers to RankingEntry format
+      const rankingData: RankingEntry[] = topPlayers.map((row: any, index: number) => ({
+        rank: index + 1,
+        address: row.player,
+        points: row.points,
+        goldenMoles: row.golden_moles || 0,
+        errors: row.errors || 0,
+        day: selectedDay,
+        claimed: false // will be updated from prizes_claimed if needed
+      }))
       
-      setRanking(enriched)
+      setRanking(rankingData)
       setDisplayDate(date)
-      console.log(`✅ [RANKING-SCREEN] Ranking loaded and enriched:`, enriched)
+      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, rankingData)
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
@@ -198,16 +203,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [todayDayId, currentPlayer])
 
   // Handle prize claim
-  const handleClaim = useCallback(async (rank: number) => {
+  const handleClaim = useCallback(async (rank: number, day: number) => {
     if (!currentPlayer) {
       alert("Wallet not connected")
       return
     }
 
     try {
-      const dateObj = new Date(displayDate + 'T00:00:00Z')
-      const day = getDayId(dateObj)
-
       const res = await fetch("/api/claimPrize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -223,13 +225,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       // Atualiza estado local
       setRanking(prev =>
-        prev.map(p => (p.rank === rank ? { ...p, claimed: true, canClaim: false } : p))
+        prev.map(p => (p.rank === rank && p.day === day ? { ...p, claimed: true } : p))
       )
     } catch (err) {
       console.error("[RANKING-SCREEN] Error claiming prize:", err)
       alert("Failed to claim prize")
     }
-  }, [currentPlayer, displayDate])
+  }, [currentPlayer])
 
   // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 
@@ -520,7 +522,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.score.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.points.toLocaleString()}</td>
                         <td className="px-4 py-3 text-center">
                           <span className="inline-flex items-center gap-1">
                             <Star className="w-4 h-4 text-yellow-600" />
@@ -529,24 +531,25 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         </td>
                         <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
                         <td className="px-4 py-3 text-center">
-                          {player.rank <= 3 ? (
-                            <Button
-                              disabled={!player.canClaim || player.claimed}
-                              onClick={() => handleClaim(player.rank)}
-                              className={cn(
-                                "text-xs",
-                                (!player.canClaim || player.claimed) && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              {player.claimed
-                                ? "Prize already claimed"
-                                : player.canClaim
-                                ? "Claim Prize"
-                                : "Cannot claim yet"}
-                            </Button>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          {(() => {
+                            const todayDay = Math.floor(new Date().getTime() / 86400000) // numero do dia atual
+                            const canClaimDay = player.day < todayDay && player.rank <= 3
+
+                            return canClaimDay ? (
+                              <Button
+                                disabled={player.claimed}
+                                onClick={() => handleClaim(player.rank, player.day)}
+                                className={cn(
+                                  "text-xs",
+                                  player.claimed && "opacity-50 cursor-not-allowed"
+                                )}
+                              >
+                                {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                              </Button>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )
+                          })()}
                         </td>
                       </tr>
                     )

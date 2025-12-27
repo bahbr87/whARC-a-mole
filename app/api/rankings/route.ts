@@ -29,7 +29,7 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
   }
 }
 
-// GET /api/rankings - Get daily ranking from Supabase
+// GET /api/rankings - Get top 3 players for a day
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
@@ -44,56 +44,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid day parameter" }, { status: 400 })
     }
 
-    // Busca ranking do dia
-    const { data: matches, error } = await supabaseAdmin
+    // Fetch top 3 for that day
+    const { data: topPlayers, error } = await supabaseAdmin
       .from("matches")
-      .select("player, score, golden_moles, errors, day")
+      .select("player, points, golden_moles, errors")
       .eq("day", day)
-      .order("score", { ascending: false })
+      .order("points", { ascending: false })
       .order("golden_moles", { ascending: false })
       .order("errors", { ascending: true })
+      .limit(3)
 
     if (error) {
       console.error("[RANKINGS] Error fetching matches:", error)
       return NextResponse.json({ error: "Database error" }, { status: 500 })
     }
 
-    const ranking = (matches || []).map((row, index) => ({
-      rank: index + 1,
-      address: row.player,
-      score: row.score,
-      goldenMoles: row.golden_moles || 0,
-      errors: row.errors || 0,
-      day: row.day, // agora incluímos o day
-      claimed: false // default, frontend vai atualizar com info de prizes_claimed
-    }))
-
-    // Busca prêmios já reclamados
-    const { data: claims, error: claimsError } = await supabaseAdmin
-      .from("prizes_claimed")
-      .select("player, rank")
-      .eq("day", day)
-
-    if (claimsError) {
-      console.error("[RANKINGS] Error fetching claims:", claimsError)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
-    }
-
-    const claimedMap = new Map<string, number>()
-    ;(claims || []).forEach(c => {
-      claimedMap.set(c.rank + "-" + c.player.toLowerCase(), 1)
-    })
-
-    // Atualiza campo claimed
-    const finalRanking = ranking.map(p => ({
-      ...p,
-      claimed: claimedMap.has(p.rank + "-" + p.address.toLowerCase())
-    }))
-
-    return NextResponse.json(finalRanking, { status: 200 })
+    return NextResponse.json({ topPlayers: topPlayers || [] }, { status: 200 })
   } catch (err) {
-    console.error("[RANKINGS] Unexpected error:", err)
-    return NextResponse.json({ error: "Unexpected error" }, { status: 500 })
+    console.error("[RANKINGS] Error fetching matches:", err)
+    return NextResponse.json({ error: "Failed to fetch rankings" }, { status: 500 })
   }
 }
 
@@ -109,9 +78,9 @@ export async function POST(request: NextRequest) {
       // 1️⃣ Verifica top 3 do dia
       const { data: topPlayers, error } = await supabaseAdmin
         .from("matches")
-        .select("player, score, golden_moles, errors")
+        .select("player, points, golden_moles, errors")
         .eq("day", day)
-        .order("score", { ascending: false })
+        .order("points", { ascending: false })
         .order("golden_moles", { ascending: false })
         .order("errors", { ascending: true })
         .limit(3)
