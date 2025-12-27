@@ -145,24 +145,35 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     setError(null)
 
     try {
-      const selectedDay = Math.floor(new Date(date).getTime() / 86400000)
+      // Parse date string (YYYY-MM-DD) and convert to UTC day
+      // Use Date.UTC to avoid timezone issues
+      const [year, month, day] = date.split('-').map(Number)
+      const dateObj = new Date(Date.UTC(year, month - 1, day))
+      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+      
+      console.log(`[RANKING-SCREEN] Loading ranking for date: ${date}, day: ${selectedDay}`)
       
       const res = await fetch(`/api/rankings?day=${selectedDay}`)
 
       if (!res.ok) throw new Error("Failed to fetch rankings")
 
       const data = await res.json()
+      console.log(`[RANKING-SCREEN] API response for day ${selectedDay}:`, data)
       setRanking(data.ranking || [])
 
       // Load claims
       const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
       if (resClaims.ok) {
         const claimsData = await resClaims.json()
+        console.log(`[RANKING-SCREEN] Claims loaded for day ${selectedDay}:`, claimsData)
         setClaims(claimsData.claims || [])
         setClaimedRanks((claimsData.claims || []).map((c: ClaimData) => c.rank))
+      } else {
+        console.warn(`[RANKING-SCREEN] Failed to load claims for day ${selectedDay}`)
       }
       
       setDisplayDate(date)
+      console.log(`✅ [RANKING-SCREEN] Ranking loaded: ${data.ranking?.length || 0} players`)
     } catch (err: any) {
       console.error("[RANKING-SCREEN] Fetch error:", err)
       setError("Failed to load rankings")
@@ -172,21 +183,40 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
   }, [])
 
-  // Calculate selectedDay from displayDate
-  const selectedDay = Math.floor(new Date(displayDate).getTime() / 86400000)
-  const isPastDay = selectedDay < Math.floor(Date.now() / 86400000)
-
   // Function to check if a player can claim
   const canClaim = useCallback((index: number, rowPlayer: string) => {
+    // Recalculate selectedDay and isPastDay from displayDate to ensure they're always current
+    const [year, month, day] = displayDate.split('-').map(Number)
+    const dateObj = new Date(Date.UTC(year, month - 1, day))
+    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+    const todayDay = Math.floor(Date.now() / 86400000)
+    const isPastDay = selectedDay < todayDay
+    
     const currentPlayerLower = currentPlayer?.toLowerCase()
-    return (
+    const rowPlayerLower = rowPlayer?.toLowerCase() || ''
+    
+    const canClaimResult = (
       isPastDay &&
       currentPlayerLower &&
-      rowPlayer.toLowerCase() === currentPlayerLower &&
+      rowPlayerLower === currentPlayer?.toLowerCase() &&
       index < 3 &&
       !claimedRanks.includes(index + 1)
     )
-  }, [isPastDay, currentPlayer, claimedRanks])
+    
+    console.log(`[RANKING-SCREEN] canClaim check:`, {
+      index,
+      rowPlayer: rowPlayerLower,
+      currentPlayer: currentPlayerLower,
+      selectedDay,
+      todayDay,
+      isPastDay,
+      isTop3: index < 3,
+      notClaimed: !claimedRanks.includes(index + 1),
+      canClaim: canClaimResult
+    })
+    
+    return canClaimResult
+  }, [displayDate, currentPlayer, claimedRanks])
 
   // Handle prize claim
   const handleClaim = useCallback(async (rank: number) => {
@@ -196,6 +226,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     try {
+      // Recalculate selectedDay from displayDate to ensure it's current
+      const [year, month, day] = displayDate.split('-').map(Number)
+      const dateObj = new Date(Date.UTC(year, month - 1, day))
+      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+      
+      console.log(`[RANKING-SCREEN] Claiming prize: day=${selectedDay}, rank=${rank}, player=${currentPlayer}`)
+      
       const res = await fetch("/api/claimPrize", {
         method: "POST",
         body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
@@ -213,7 +250,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       console.error(err)
       alert("Failed to claim prize")
     }
-  }, [currentPlayer, selectedDay])
+  }, [currentPlayer, displayDate])
 
   // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 

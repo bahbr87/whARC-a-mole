@@ -33,6 +33,9 @@ export async function POST(req: Request) {
     // Explicitly set timestamp to ensure it's in UTC and matches the column name
     const timestamp = new Date().toISOString();
     
+    // Calculate day using the same formula as everywhere else: Math.floor(timestamp / 86400000)
+    const day = Math.floor(Date.now() / 86400000);
+    
     const { error } = await supabaseAdmin
       .from('matches')
       .insert([{ 
@@ -40,7 +43,8 @@ export async function POST(req: Request) {
         points,
         golden_moles: golden_moles || 0,
         errors: errors || 0,
-        timestamp // Explicitly set timestamp column
+        timestamp, // Explicitly set timestamp column
+        day // Calculate and save day field
       }]);
 
     if (error) {
