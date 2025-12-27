@@ -218,7 +218,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [])
 
   // Function to check if a player can claim
-  const canClaim = useCallback((index: number, rowPlayer: string) => {
+  // ✅ CORREÇÃO: Agora recebe rank (1-based) em vez de index (0-based)
+  // ANTES: Recebia index e verificava index < 3 (só funcionava para primeira página)
+  // AGORA: Recebe rank e verifica rank <= 3 (funciona para qualquer página)
+  const canClaim = useCallback((rank: number, rowPlayer: string) => {
     // Recalculate selectedDay and isPastDay from displayDate to ensure they're always current
     const [year, month, day] = displayDate.split('-').map(Number)
     const dateObj = new Date(Date.UTC(year, month - 1, day))
@@ -226,26 +229,34 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     const todayDay = Math.floor(Date.now() / 86400000)
     const isPastDay = selectedDay < todayDay
     
-    const currentPlayerLower = currentPlayer?.toLowerCase()
+    const currentPlayerLower = currentPlayer?.toLowerCase() || ''
     const rowPlayerLower = rowPlayer?.toLowerCase() || ''
     
+    // ✅ CORREÇÃO: Comparar rowPlayerLower com currentPlayerLower (ambos já em lowercase)
+    // ANTES: rowPlayerLower === currentPlayer?.toLowerCase() (redundante e pode falhar)
+    // AGORA: rowPlayerLower === currentPlayerLower (comparação direta e correta)
+    // ✅ CORREÇÃO: Verificar rank <= 3 em vez de index < 3
     const canClaimResult = (
       isPastDay &&
-      currentPlayerLower &&
-      rowPlayerLower === currentPlayer?.toLowerCase() &&
-      index < 3 &&
-      !claimedRanks.includes(index + 1)
+      currentPlayerLower !== '' &&
+      rowPlayerLower !== '' &&
+      rowPlayerLower === currentPlayerLower &&
+      rank <= 3 &&
+      !claimedRanks.includes(rank)
     )
     
     console.log(`[RANKING-SCREEN] canClaim check:`, {
-      index,
-      rowPlayer: rowPlayerLower,
-      currentPlayer: currentPlayerLower,
+      rank,
+      rowPlayer: rowPlayer,
+      rowPlayerLower: rowPlayerLower,
+      currentPlayer: currentPlayer,
+      currentPlayerLower: currentPlayerLower,
       selectedDay,
       todayDay,
       isPastDay,
-      isTop3: index < 3,
-      notClaimed: !claimedRanks.includes(index + 1),
+      isTop3: rank <= 3,
+      notClaimed: !claimedRanks.includes(rank),
+      claimedRanks: claimedRanks,
       canClaim: canClaimResult
     })
     
@@ -534,7 +545,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                 </thead>
                 <tbody className="divide-y divide-amber-200">
                   {paginatedRankings.map((row: RankingEntry, index: number) => {
-                    const rank = index + 1
+                    // ✅ CORREÇÃO: Calcular o rank real baseado na página atual
+                    // ANTES: rank = index + 1 (só funcionava para primeira página)
+                    // AGORA: rank = (currentPage - 1) * itemsPerPage + index + 1 (rank global correto)
+                    const rank = (currentPage - 1) * itemsPerPage + index + 1
 
                     return (
                       <tr key={row.player}>
@@ -544,7 +558,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         <td>{row.golden_moles ?? 0}</td>
                         <td>{row.errors ?? 0}</td>
                         <td>
-                          {canClaim(index, row.player) ? (
+                          {/* ✅ CORREÇÃO: Passar rank diretamente para canClaim (agora recebe rank, não index) */}
+                          {canClaim(rank, row.player) ? (
                             <Button
                               onClick={() => handleClaim(rank)}
                               className="text-xs"
