@@ -80,6 +80,7 @@ type Player = {
   totalPoints: number
   totalGoldenMoles?: number
   totalErrors?: number
+  claimed?: boolean
 }
 
 // Type for ranking entry with claim status
@@ -222,14 +223,17 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const res = await fetch(`/api/claimPrize?day=${day}`, { method: 'GET' })
       if (res.ok) {
         const data = await res.json()
-        const claimsMap = new Map<string, boolean>()
         if (Array.isArray(data.claims)) {
-          data.claims.forEach((claim: { player: string; rank: number }) => {
-            const key = `${claim.player.toLowerCase()}-${claim.rank}`
-            claimsMap.set(key, true)
-          })
+          // Atualiza o estado ranking com os claims
+          setRanking(prev => prev.map((p, index) => {
+            const playerRank = index + 1
+            const playerAddressLower = (p.player || "").toLowerCase()
+            const isClaimed = data.claims.some((claim: { player: string; rank: number }) => 
+              claim.player.toLowerCase() === playerAddressLower && claim.rank === playerRank
+            )
+            return isClaimed ? { ...p, claimed: true } : p
+          }))
         }
-        setClaimedStatus(claimsMap)
       }
     } catch (err) {
       console.error("[RANKING-SCREEN] Error loading claim status:", err)
@@ -260,14 +264,16 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
 
-      // Update state to disable the button
-      const playerAddressLower = currentPlayer?.toLowerCase?.() || ""
-      const key = `${playerAddressLower}-${rank}`
-      setClaimedStatus(prev => {
-        const newMap = new Map(prev)
-        newMap.set(key, true)
-        return newMap
-      })
+      // Atualiza estado para desabilitar botão
+      setRanking(prev =>
+        prev.map((p, index) => {
+          const playerRank = index + 1
+          if (playerRank === rank) {
+            return { ...p, claimed: true }
+          }
+          return p
+        })
+      )
     } catch (err) {
       console.error("[RANKING-SCREEN] Error claiming prize:", err)
       alert("Failed to claim prize")
@@ -314,9 +320,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // Isso garante que os dados sempre fluam corretamente de ranking para a renderização
     const mapped = ranking.map((entry, index) => {
       const globalRank = index + 1
+      // Usa claimed do entry se existir, senão verifica no claimedStatus (fallback)
       const playerAddressLower = entry?.player?.toLowerCase?.() || ""
       const key = `${playerAddressLower}-${globalRank}`
-      const claimed = claimedStatus.get(key) || false
+      const claimed = entry.claimed !== undefined ? entry.claimed : (claimedStatus.get(key) || false)
 
       return {
         rank: globalRank,
@@ -592,11 +599,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         <td className="px-4 py-3 text-center">
                           {player.rank <= 3 ? (
                             <Button
-                              disabled={player.claimed}
+                              disabled={player.claimed || (player.address?.toLowerCase() || player.player?.toLowerCase() || "") !== (currentPlayer?.toLowerCase() || "")}
                               onClick={() => handleClaim(player.rank)}
                               className={cn(
                                 "text-xs",
-                                player.claimed && "opacity-50 cursor-not-allowed"
+                                (player.claimed || (player.address?.toLowerCase() || player.player?.toLowerCase() || "") !== (currentPlayer?.toLowerCase() || "")) && "opacity-50 cursor-not-allowed"
                               )}
                             >
                               {player.claimed ? "Prize already claimed" : "Claim Prize"}
