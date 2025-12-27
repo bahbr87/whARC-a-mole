@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 /**
  * POST /api/saveMatch
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     // Explicitly set timestamp to ensure it's in UTC and matches the column name
     const timestamp = new Date().toISOString();
     
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('matches')
       .insert([{ 
         player: normalizedPlayer, 

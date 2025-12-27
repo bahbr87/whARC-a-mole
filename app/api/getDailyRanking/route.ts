@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 /**
  * GET /api/getDailyRanking
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
     let error: any = null;
 
     console.log('[RANKING] Querying all matches from Supabase...');
-    const { data: allMatches, error: allError } = await supabase
+    const { data: allMatches, error: allError } = await supabaseAdmin
       .from('matches')
       .select('player, points, golden_moles, errors, timestamp')
       .order('timestamp', { ascending: false });

@@ -1,17 +1,30 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClient } from "@supabase/supabase-js";
 
 // Get env vars (allow build to succeed even if not set)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Create client only if both vars are set (will be validated at runtime in API routes)
-export const supabase = supabaseUrl && supabaseKey
-  ? createClient(supabaseUrl, supabaseKey)
+// Frontend (uso seguro)
+export const supabase = supabaseUrl && anonKey
+  ? createClient(supabaseUrl, anonKey)
   : (() => {
-      // Return a mock client that throws on use (for build time)
+      // Return a mock client for build time
       return {
         from: () => {
-          throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not set in environment variables. Please configure your .env.local file.');
+          throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not set in environment variables.');
+        }
+      } as any;
+    })();
+
+// Backend (service role, acesso completo)
+export const supabaseAdmin = supabaseUrl && serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey)
+  : (() => {
+      // Return a mock client for build time
+      return {
+        from: () => {
+          throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set in environment variables.');
         }
       } as any;
     })();
