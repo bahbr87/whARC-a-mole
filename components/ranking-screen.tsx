@@ -454,7 +454,14 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                 <tbody className="divide-y divide-amber-200">
                   {paginatedRankings.map((player, index) => {
                     const globalIndex = (currentPage - 1) * itemsPerPage + index
-                    const isCurrentPlayer = player.player.toLowerCase() === currentPlayer?.toLowerCase()
+                    // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.player ou currentPlayer são undefined
+                    // ANTES: player.player.toLowerCase() quebrava se player.player fosse undefined
+                    // PROBLEMA: Backend pode enviar jogador sem address/player, ou currentPlayer pode ainda não ter carregado
+                    // AGORA: Usamos optional chaining e verificamos se ambos existem antes de comparar
+                    const playerAddressLower = player?.player?.toLowerCase?.() || ""
+                    const isCurrentPlayer =
+                      playerAddressLower !== "" &&
+                      currentPlayer?.toLowerCase?.() === playerAddressLower
                     const isTop3 = globalIndex < 3
 
                     return (

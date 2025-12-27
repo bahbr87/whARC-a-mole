@@ -311,7 +311,12 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
         // Check canClaim and claimed for each top 3 player
         for (const player of top3Players) {
           try {
-            const playerAddress = player.address.toLowerCase()
+            // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.address é undefined
+            const playerAddress = player?.address?.toLowerCase?.() || ""
+            if (!playerAddress) {
+              console.warn(`⚠️ [DAILY-RESULTS] Player without address, skipping:`, player)
+              continue
+            }
             const canClaimResult = await contract.canClaim(day, playerAddress)
             const claimedResult = await contract.claimed(day, playerAddress)
             
@@ -320,9 +325,13 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
             
             console.log(`🔍 [DAILY-RESULTS] Player ${playerAddress}: canClaim=${canClaimResult}, claimed=${claimedResult}`)
           } catch (error: any) {
-            console.error(`Error checking claims for ${player.address}:`, error.message)
-            canClaimMapLocal.set(player.address.toLowerCase(), false)
-            claimedMapLocal.set(player.address.toLowerCase(), false)
+            // ✅ CORREÇÃO: Usar optional chaining também no catch
+            const playerAddress = player?.address?.toLowerCase?.() || ""
+            if (playerAddress) {
+              console.error(`Error checking claims for ${playerAddress}:`, error.message)
+              canClaimMapLocal.set(playerAddress, false)
+              claimedMapLocal.set(playerAddress, false)
+            }
           }
         }
         
@@ -468,11 +477,19 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
                   </thead>
                   <tbody className="divide-y divide-amber-200">
                     {dailyRanking.map((player, index) => {
-                      const isCurrentPlayer = player.address.toLowerCase() === currentPlayer.toLowerCase()
+                      // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.address ou currentPlayer são undefined
+                      // ANTES: player.address.toLowerCase() quebrava se player.address fosse undefined
+                      // PROBLEMA: Backend pode enviar jogador sem address, ou currentPlayer pode ainda não ter carregado
+                      // AGORA: Usamos optional chaining e verificamos se ambos existem antes de comparar
+                      const playerAddressLower = player?.address?.toLowerCase?.() || ""
+                      const isCurrentPlayer =
+                        playerAddressLower !== "" &&
+                        currentPlayer?.toLowerCase?.() === playerAddressLower
                       const isTop3 = index < 3
-                      const playerAddressLower = player.address.toLowerCase()
                       const playerCanClaim = canClaimMap.get(playerAddressLower) || false
-                      const playerClaimed = claimedStatus.get(playerAddressLower) || false
+                      // ✅ CORREÇÃO: Verificar se playerAddressLower existe antes de usar no Map
+                      const playerClaimed =
+                        playerAddressLower ? claimedStatus.get(playerAddressLower) || false : false
 
                       return (
                         <tr
@@ -555,12 +572,18 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
                                             
                                             setCanClaimMap((prev) => {
                                               const updated = new Map(prev)
-                                              updated.set(currentPlayer.toLowerCase(), newCanClaim)
+                                              // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando currentPlayer é undefined
+                                              if (currentPlayer?.toLowerCase) {
+                                                updated.set(currentPlayer.toLowerCase(), newCanClaim)
+                                              }
                                               return updated
                                             })
                                             setClaimedStatus((prev) => {
                                               const updated = new Map(prev)
-                                              updated.set(currentPlayer.toLowerCase(), newClaimed)
+                                              // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando currentPlayer é undefined
+                                              if (currentPlayer?.toLowerCase) {
+                                                updated.set(currentPlayer.toLowerCase(), newClaimed)
+                                              }
                                               return updated
                                             })
                                           }
