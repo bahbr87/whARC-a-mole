@@ -4,6 +4,7 @@ import path from "path"
 import { getDayId } from "@/utils/day"
 import { ensureRankingsLoaded, getRankingsFromCache, addRankingToCache, replaceRankingsCache, type RankingEntry } from "@/lib/rankings-cache"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getContractInstance } from "@/lib/contract"
 
 // File-based storage for persistence
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
@@ -29,49 +30,153 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
 }
 
 // GET /api/rankings - Get daily ranking from Supabase
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+    const url = new URL(req.url)
+    const dayParam = url.searchParams.get("day")
+
+    if (!dayParam) {
+      return NextResponse.json({ error: "Missing day parameter" }, { status: 400 })
     }
 
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date()
-    todayEnd.setHours(23, 59, 59, 999)
+    const day = parseInt(dayParam, 10)
+    if (isNaN(day)) {
+      return NextResponse.json({ error: "Invalid day parameter" }, { status: 400 })
+    }
 
-    const { data, error } = await supabaseAdmin
-      .from('matches')
-      .select('player, points, timestamp')
-      .gte('timestamp', todayStart.toISOString())
-      .lte('timestamp', todayEnd.toISOString())
+    // Busca ranking do dia
+    const { data: matches, error } = await supabaseAdmin
+      .from("matches")
+      .select("player, score, golden_moles, errors, day")
+      .eq("day", day)
+      .order("score", { ascending: false })
+      .order("golden_moles", { ascending: false })
+      .order("errors", { ascending: true })
 
-    if (error) throw error
+    if (error) {
+      console.error("[RANKINGS] Error fetching matches:", error)
+      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    }
 
-    const rankingMap: Record<string, number> = {}
-    data?.forEach(match => {
-      const player = match.player.toLowerCase()
-      rankingMap[player] = (rankingMap[player] || 0) + match.points
+    const ranking = (matches || []).map((row, index) => ({
+      rank: index + 1,
+      address: row.player,
+      score: row.score,
+      goldenMoles: row.golden_moles || 0,
+      errors: row.errors || 0,
+      day: row.day, // agora incluímos o day
+      claimed: false // default, frontend vai atualizar com info de prizes_claimed
+    }))
+
+    // Busca prêmios já reclamados
+    const { data: claims, error: claimsError } = await supabaseAdmin
+      .from("prizes_claimed")
+      .select("player, rank")
+      .eq("day", day)
+
+    if (claimsError) {
+      console.error("[RANKINGS] Error fetching claims:", claimsError)
+      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    }
+
+    const claimedMap = new Map<string, number>()
+    ;(claims || []).forEach(c => {
+      claimedMap.set(c.rank + "-" + c.player.toLowerCase(), 1)
     })
 
-    const ranking = Object.entries(rankingMap)
-      .map(([player, totalPoints]) => ({ player, totalPoints }))
-      .sort((a, b) => b.totalPoints - a.totalPoints)
+    // Atualiza campo claimed
+    const finalRanking = ranking.map(p => ({
+      ...p,
+      claimed: claimedMap.has(p.rank + "-" + p.address.toLowerCase())
+    }))
 
-    return NextResponse.json(ranking)
+    return NextResponse.json(finalRanking, { status: 200 })
   } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'Erro ao gerar ranking' }, { status: 500 })
+    console.error("[RANKINGS] Unexpected error:", err)
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 })
   }
 }
 
-// POST /api/rankings - Add a new ranking entry
+// POST /api/rankings - Add a new ranking entry OR claim prize
 export async function POST(request: NextRequest) {
   try {
-    await ensureRankingsLoaded()
-    
     const body = await request.json()
-    const { player, score, goldenMoles, errors, timestamp, day } = body
+    const { player, score, goldenMoles, errors, timestamp, day, rank } = body
+
+    // Se receber day, rank e player sem score, é um claim
+    if (day !== undefined && rank !== undefined && player && score === undefined) {
+      // Processar como claim
+      // 1️⃣ Verifica top 3 do dia
+      const { data: topPlayers, error } = await supabaseAdmin
+        .from("matches")
+        .select("player, score, golden_moles, errors")
+        .eq("day", day)
+        .order("score", { ascending: false })
+        .order("golden_moles", { ascending: false })
+        .order("errors", { ascending: true })
+        .limit(3)
+
+      if (error) {
+        console.error("[RANKINGS] Error fetching top players:", error)
+        return NextResponse.json({ error: "Database error" }, { status: 500 })
+      }
+
+      if (!topPlayers || topPlayers.length === 0) {
+        return NextResponse.json({ error: "No matches found for this day" }, { status: 404 })
+      }
+
+      const winner = topPlayers[rank - 1]?.player?.toLowerCase()
+      if (!winner || winner !== player.toLowerCase()) {
+        return NextResponse.json({ error: "Not authorized" }, { status: 403 })
+      }
+
+      // 2️⃣ Verifica se já foi reivindicado
+      const { data: claimedData, error: claimedError } = await supabaseAdmin
+        .from("prizes_claimed")
+        .select("*")
+        .eq("day", day)
+        .eq("rank", rank)
+        .eq("player", player.toLowerCase())
+
+      if (claimedError) {
+        console.error("[RANKINGS] Error checking claims:", claimedError)
+        return NextResponse.json({ error: "Database error" }, { status: 500 })
+      }
+
+      if (claimedData && claimedData.length > 0) {
+        return NextResponse.json({ error: "Prize already claimed" }, { status: 400 })
+      }
+
+      // 3️⃣ Registra claim no Supabase
+      const { error: insertError } = await supabaseAdmin.from("prizes_claimed").insert({
+        day,
+        rank,
+        player: player.toLowerCase(),
+        claimed: true,
+        claimed_at: new Date().toISOString()
+      })
+
+      if (insertError) {
+        console.error("[RANKINGS] Error inserting claim:", insertError)
+        return NextResponse.json({ error: "Failed to register claim" }, { status: 500 })
+      }
+
+      // 4️⃣ (Opcional) Registra no contrato
+      try {
+        const contract = getContractInstance()
+        if (contract) {
+          await contract.claimPrize(day, rank, player)
+        }
+      } catch (contractErr) {
+        console.error("[RANKINGS] Contract call failed:", contractErr)
+        // Não falha o request se o contrato falhar - o claim já foi registrado no Supabase
+      }
+
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    // Caso contrário, processar como ranking normal
+    await ensureRankingsLoaded()
 
     if (!player || score === undefined || goldenMoles === undefined || errors === undefined || !timestamp) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })

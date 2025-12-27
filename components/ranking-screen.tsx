@@ -91,6 +91,8 @@ interface RankingEntry {
   goldenMoles?: number
   errors?: number
   claimed?: boolean
+  day: number // adicione o day do ranking
+  canClaim?: boolean // indica se o jogador pode fazer claim
 }
 
 const formatAddress = (address: string) => {
@@ -137,12 +139,19 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // mesmo quando ranking tinha dados. A renderização verificava rankings.length mas usava paginatedRankings.
   // AGORA: Usamos apenas 'ranking' como fonte única da verdade. Os valores derivados (paginatedRankings)
   // são calculados diretamente de 'ranking' quando necessário.
-  const [ranking, setRanking] = useState<Player[]>([])
+  const [ranking, setRanking] = useState<RankingEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [claimedStatus, setClaimedStatus] = useState<Map<string, boolean>>(new Map())
+  const [todayDayId, setTodayDayId] = useState<number>(0)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
+
+  // Calculate today's day ID
+  useEffect(() => {
+    const today = new Date()
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    setTodayDayId(Math.floor(startOfDay.getTime() / (1000 * 60 * 60 * 24)))
+  }, [])
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
@@ -151,11 +160,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     try {
       setLoading(true)
       setError(null)
-      // ✅ CORREÇÃO: NÃO limpar ranking aqui - isso causava flash de "No players" antes dos dados chegarem
-      // O ranking só será atualizado quando os dados chegarem com sucesso
       
-      const url = `/api/getDailyRanking?date=${date}`
-      console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${date}, URL: ${url}`)
+      // Convert date string to day ID
+      const dateObj = new Date(date + 'T00:00:00Z')
+      const selectedDay = getDayId(dateObj)
+      
+      const url = `/api/rankings?day=${selectedDay}`
+      console.log(`📅 [RANKING-SCREEN] Fetching ranking for day: ${selectedDay}, URL: ${url}`)
       const res = await fetch(url)
       console.log(`📅 [RANKING-SCREEN] Fetch response status: ${res.status}, ok: ${res.ok}`)
       
@@ -164,81 +175,27 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         throw new Error(errorData.error || `HTTP ${res.status}`)
       }
       
-      const data = await res.json()
-      console.log(`✅ [RANKING-SCREEN] Response received for ${date}:`, data)
-      console.log(`✅ [RANKING-SCREEN] players is array:`, Array.isArray(data?.players))
-      console.log(`✅ [RANKING-SCREEN] players length:`, data?.players?.length)
+      const data: RankingEntry[] = await res.json()
+      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, data)
       
-      // ✅ CORREÇÃO: Sempre usar setRanking(data.players) diretamente após o fetch
-      // ANTES: Havia lógica complexa com criação de novo array, verificações extras, etc.
-      // PROBLEMA: Isso podia causar problemas de referência ou timing que faziam o estado não atualizar
-      // AGORA: Atualizamos diretamente com os dados da API, garantindo que o estado seja atualizado
-      if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
-        console.log(`✅ [RANKING-SCREEN] Setting ranking with ${data.players.length} players`)
-        console.log(`✅ [RANKING-SCREEN] Players data:`, JSON.stringify(data.players, null, 2))
-        
-        // ✅ CORREÇÃO: setRanking(data.players) diretamente - sem criar novo array ou verificações extras
-        // O React detecta a mudança automaticamente se o array for diferente
-        setRanking(data.players)
-        console.log(`✅ [RANKING-SCREEN] setRanking called with ${data.players.length} players`)
-        
-        // Update display date if provided by API
-        if (data.date && data.date !== date) {
-          setDisplayDate(data.date)
-        } else {
-          setDisplayDate(date)
-        }
-        console.log(`✅ [RANKING-SCREEN] Ranking state updated, displayDate: ${data.date || date}`)
-      } 
-      // Fallback: handle old format (array directly) for backward compatibility
-      else if (Array.isArray(data)) {
-        console.log(`✅ [RANKING-SCREEN] Using fallback format, setting ranking with ${data.length} items`)
-        setRanking(data)
-        setDisplayDate(date)
-      } 
-      else {
-        console.error(`❌ [RANKING-SCREEN] Invalid response format:`, data)
-        throw new Error('Invalid response format from API')
-      }
-
-      // Load claim status for this day
-      await loadClaimStatus(date)
+      // Enrich with canClaim logic
+      const enriched = data.map(p => {
+        const canClaim = selectedDay < todayDayId && p.rank <= 3 && !p.claimed && (p.address?.toLowerCase() || "") === (currentPlayer?.toLowerCase() || "")
+        return { ...p, canClaim }
+      })
+      
+      setRanking(enriched)
+      setDisplayDate(date)
+      console.log(`✅ [RANKING-SCREEN] Ranking loaded and enriched:`, enriched)
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
-      // ✅ CORREÇÃO: Só limpar ranking em caso de erro - não limpar durante o loading
       setRanking([])
     } finally {
       console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
     }
-  }, [])
-
-  // Load claim status for a specific date
-  const loadClaimStatus = useCallback(async (date: string) => {
-    try {
-      const dateObj = new Date(date + 'T00:00:00Z')
-      const day = getDayId(dateObj)
-      
-      const res = await fetch(`/api/claimPrize?day=${day}`, { method: 'GET' })
-      if (res.ok) {
-        const data = await res.json()
-        if (Array.isArray(data.claims)) {
-          // Atualiza o estado ranking com os claims
-          setRanking(prev => prev.map((p, index) => {
-            const playerRank = index + 1
-            const playerAddressLower = (p.player || "").toLowerCase()
-            const isClaimed = data.claims.some((claim: { player: string; rank: number }) => 
-              claim.player.toLowerCase() === playerAddressLower && claim.rank === playerRank
-            )
-            return isClaimed ? { ...p, claimed: true } : p
-          }))
-        }
-      }
-    } catch (err) {
-      console.error("[RANKING-SCREEN] Error loading claim status:", err)
-    }
-  }, [])
+  }, [todayDayId, currentPlayer])
 
   // Handle prize claim
   const handleClaim = useCallback(async (rank: number) => {
@@ -253,8 +210,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       const res = await fetch("/api/claimPrize", {
         method: "POST",
-        body: JSON.stringify({ day, rank, player: currentPlayer }),
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ day, rank, player: currentPlayer })
       })
 
       const data = await res.json()
@@ -264,15 +221,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
 
-      // Atualiza estado para desabilitar botão
+      // Atualiza estado local
       setRanking(prev =>
-        prev.map((p, index) => {
-          const playerRank = index + 1
-          if (playerRank === rank) {
-            return { ...p, claimed: true }
-          }
-          return p
-        })
+        prev.map(p => (p.rank === rank ? { ...p, claimed: true, canClaim: false } : p))
       )
     } catch (err) {
       console.error("[RANKING-SCREEN] Error claiming prize:", err)
@@ -316,28 +267,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
     
-    // ✅ CORREÇÃO: Mapear ranking diretamente aqui, sem criar estado intermediário
-    // Isso garante que os dados sempre fluam corretamente de ranking para a renderização
-    const mapped = ranking.map((entry, index) => {
-      const globalRank = index + 1
-      // Usa claimed do entry se existir, senão verifica no claimedStatus (fallback)
-      const playerAddressLower = entry?.player?.toLowerCase?.() || ""
-      const key = `${playerAddressLower}-${globalRank}`
-      const claimed = entry.claimed !== undefined ? entry.claimed : (claimedStatus.get(key) || false)
-
-      return {
-        rank: globalRank,
-        address: entry.player,
-        player: entry.player,
-        score: entry.totalPoints || 0,
-        goldenMoles: entry.totalGoldenMoles || 0,
-        errors: entry.totalErrors || 0,
-        claimed,
-      }
-    })
-    
-    return mapped.slice(startIndex, endIndex)
-  }, [ranking, currentPage, claimedStatus])
+    // Ranking já vem com todos os campos necessários do API
+    return ranking.slice(startIndex, endIndex)
+  }, [ranking, currentPage])
 
   const totalPages = Math.min(maxPages, Math.ceil(ranking.length / itemsPerPage))
 
@@ -552,7 +484,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     // ANTES: player.address.toLowerCase() quebrava se player.address fosse undefined
                     // PROBLEMA: Backend pode enviar jogador sem address, ou currentPlayer pode ainda não ter carregado
                     // AGORA: Usamos optional chaining e verificamos se ambos existem antes de comparar
-                    const playerAddressLower = (player?.address || player?.player)?.toLowerCase?.() || ""
+                    const playerAddressLower = player?.address?.toLowerCase?.() || ""
                     const isCurrentPlayer =
                       playerAddressLower !== "" &&
                       currentPlayer?.toLowerCase?.() === playerAddressLower
@@ -560,7 +492,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
                     return (
                       <tr
-                        key={player.address || player.player || index}
+                        key={player.rank + "-" + player.day}
                         className={cn(
                           "transition-colors",
                           isCurrentPlayer && "bg-amber-100 font-bold",
@@ -582,7 +514,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         </td>
                         <td className="px-4 py-3 text-amber-900">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{formatAddress(player.address || player.player)}</span>
+                            <span className="font-mono text-sm">{formatAddress(player.address)}</span>
                             {isCurrentPlayer && (
                               <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">YOU</span>
                             )}
@@ -599,14 +531,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         <td className="px-4 py-3 text-center">
                           {player.rank <= 3 ? (
                             <Button
-                              disabled={player.claimed || (player.address?.toLowerCase() || player.player?.toLowerCase() || "") !== (currentPlayer?.toLowerCase() || "")}
+                              disabled={!player.canClaim || player.claimed}
                               onClick={() => handleClaim(player.rank)}
                               className={cn(
                                 "text-xs",
-                                (player.claimed || (player.address?.toLowerCase() || player.player?.toLowerCase() || "") !== (currentPlayer?.toLowerCase() || "")) && "opacity-50 cursor-not-allowed"
+                                (!player.canClaim || player.claimed) && "opacity-50 cursor-not-allowed"
                               )}
                             >
-                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                              {player.claimed
+                                ? "Prize already claimed"
+                                : player.canClaim
+                                ? "Claim Prize"
+                                : "Cannot claim yet"}
                             </Button>
                           ) : (
                             <span className="text-gray-400">-</span>
