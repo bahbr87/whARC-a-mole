@@ -33,45 +33,53 @@ export async function POST(req: Request) {
     const { day, rank, player } = await req.json();
 
     if (!day || !rank || !player) {
-      return new Response(JSON.stringify({ error: "Missing required fields: day, rank, player" }), { status: 400 });
+      return new Response(
+        JSON.stringify({
+          error: "Missing: day, rank or player",
+        }),
+        { status: 400 }
+      );
     }
 
-    // Buscar todos os matches do dia
-    const { data: matches, error } = await supabaseAdmin
+    const { data: topPlayers, error } = await supabaseAdmin
       .from("matches")
       .select("player, points, golden_moles, errors")
       .eq("day", day)
       .order("points", { ascending: false })
       .order("golden_moles", { ascending: false })
-      .order("errors", { ascending: true });
+      .order("errors", { ascending: true })
+      .limit(3);
 
     if (error) {
-      console.error("[CLAIM-PRIZE] Error fetching matches:", error);
-      return new Response(JSON.stringify({ error: "Database error" }), { status: 500 });
+      console.error("[CLAIM] DB ranking error:", error);
+      return new Response(JSON.stringify({ error: "Database error" }), {
+        status: 500,
+      });
     }
 
-    const winner = matches?.[rank - 1]?.player?.toLowerCase();
+    const winner = topPlayers?.[rank - 1]?.player?.toLowerCase();
+
     if (!winner || winner !== player.toLowerCase()) {
-      return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403 });
+      return new Response(JSON.stringify({ error: "Not authorized" }), {
+        status: 403,
+      });
     }
 
-    // Verifica se já foi reivindicado
-    const { data: claimedData, error: claimedError } = await supabaseAdmin
+    const { data: alreadyClaimed } = await supabaseAdmin
       .from("prizes_claimed")
       .select("*")
       .eq("day", day)
       .eq("rank", rank)
       .eq("player", player.toLowerCase());
 
-    if (claimedError) {
-      console.error("[CLAIM-PRIZE] Error checking claims:", claimedError);
-      return new Response(JSON.stringify({ error: "Database error" }), { status: 500 });
+    if (alreadyClaimed && alreadyClaimed.length > 0) {
+      return new Response(
+        JSON.stringify({ error: "Prize already claimed" }),
+        { status: 400 }
+      );
     }
 
-    if (claimedData?.length) return new Response(JSON.stringify({ error: "Prize already claimed" }), { status: 400 });
-
-    // Registrar claim no Supabase
-    const { error: insertError } = await supabaseAdmin.from("prizes_claimed").insert({
+    await supabaseAdmin.from("prizes_claimed").insert({
       day,
       rank,
       player: player.toLowerCase(),
@@ -79,24 +87,21 @@ export async function POST(req: Request) {
       claimed_at: new Date().toISOString(),
     });
 
-    if (insertError) {
-      console.error("[CLAIM-PRIZE] Error inserting claim:", insertError);
-      return new Response(JSON.stringify({ error: "Failed to register claim" }), { status: 500 });
-    }
-
-    // Chamada opcional ao contrato
     try {
       const contract = getContractInstance();
-      if (contract) await contract.claimPrize(day, rank, player);
-    } catch (contractErr) {
-      console.error("[CLAIM-PRIZE] Contract call failed:", contractErr);
+      if (contract) {
+        await contract.claimPrize(day, rank, player);
+      }
+    } catch (err) {
+      console.error("[CLAIM] Contract fail:", err);
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
-
   } catch (err) {
-    console.error(err);
-    return new Response(JSON.stringify({ error: "Unexpected error" }), { status: 500 });
+    console.error("[CLAIM] Unexpected:", err);
+    return new Response(JSON.stringify({ error: "Unexpected error" }), {
+      status: 500,
+    });
   }
 }
 

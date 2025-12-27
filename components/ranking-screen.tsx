@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { ArrowLeft, Trophy, Star, Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -74,22 +73,13 @@ interface RankingScreenProps {
   selectedDate?: string // formato 'YYYY-MM-DD' - opcional, usa hoje se não fornecido
 }
 
-// Type for player data from API
-type Player = {
-  player: string
-  totalPoints: number
-  totalGoldenMoles?: number
-  totalErrors?: number
-  claimed?: boolean
-}
-
 // Type for ranking entry with claim status
 type RankingEntry = {
   player: string
-  totalPoints: number
-  totalGoldenMoles: number
-  totalErrors: number
-  timestamp: string
+  points: number
+  golden_moles: number
+  errors: number
+  day: number
 }
 
 type ClaimData = {
@@ -143,6 +133,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // são calculados diretamente de 'ranking' quando necessário.
   const [ranking, setRanking] = useState<RankingEntry[]>([])
   const [claims, setClaims] = useState<ClaimData[]>([])
+  const [claimedRanks, setClaimedRanks] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const itemsPerPage = 50
@@ -150,59 +141,52 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
-    console.log(`🚀 [RANKING-SCREEN] loadRanking called with date: ${date}`)
-    
+    setLoading(true)
+    setError(null)
+
     try {
-      setLoading(true)
-      setError(null)
+      const selectedDay = Math.floor(new Date(date).getTime() / 86400000)
       
-      // Convert date string to day ID
-      const dateObj = new Date(date + 'T00:00:00Z')
-      const selectedDay = getDayId(dateObj)
-      
-      const url = `/api/rankings?day=${selectedDay}`
-      console.log(`📅 [RANKING-SCREEN] Fetching ranking for day: ${selectedDay}, URL: ${url}`)
-      const res = await fetch(url)
-      console.log(`📅 [RANKING-SCREEN] Fetch response status: ${res.status}, ok: ${res.ok}`)
-      
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}))
-        throw new Error(errorData.error || `HTTP ${res.status}`)
+      const res = await fetch(`/api/rankings?day=${selectedDay}`)
+
+      if (!res.ok) throw new Error("Failed to fetch rankings")
+
+      const data = await res.json()
+      setRanking(data.ranking || [])
+
+      // Load claims
+      const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
+      if (resClaims.ok) {
+        const claimsData = await resClaims.json()
+        setClaims(claimsData.claims || [])
+        setClaimedRanks((claimsData.claims || []).map((c: ClaimData) => c.rank))
       }
       
-      const resRanking = await fetch(`/api/rankings?day=${selectedDay}`)
-      if (!resRanking.ok) throw new Error("Failed to fetch rankings")
-      
-      const rankingJson = await resRanking.json()
-      setRanking(rankingJson.ranking || [])
-
-      const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
-      if (!resClaims.ok) throw new Error("Failed to fetch claims")
-      
-      const claimsJson = await resClaims.json()
-      setClaims(claimsJson.claims || [])
-      
       setDisplayDate(date)
-      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, rankingJson.ranking)
-    } catch (err) {
-      console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
-      setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
+    } catch (err: any) {
+      console.error("[RANKING-SCREEN] Fetch error:", err)
+      setError("Failed to load rankings")
       setRanking([])
     } finally {
-      console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
     }
-  }, [currentPlayer])
+  }, [])
+
+  // Calculate selectedDay from displayDate
+  const selectedDay = Math.floor(new Date(displayDate).getTime() / 86400000)
+  const isPastDay = selectedDay < Math.floor(Date.now() / 86400000)
 
   // Function to check if a player can claim
-  const canClaim = useCallback((player: string, rank: number) => {
-    const dateObj = new Date(displayDate + 'T00:00:00Z')
-    const selectedDay = getDayId(dateObj)
-    const isTop3 = rank <= 3
-    const alreadyClaimed = claims.some((c) => c.rank === rank && c.player.toLowerCase() === player.toLowerCase())
-    const isPastDay = selectedDay < Math.floor(Date.now() / 86400000)
-    return isTop3 && !alreadyClaimed && isPastDay
-  }, [claims, displayDate])
+  const canClaim = useCallback((index: number, rowPlayer: string) => {
+    const currentPlayerLower = currentPlayer?.toLowerCase()
+    return (
+      isPastDay &&
+      currentPlayerLower &&
+      rowPlayer.toLowerCase() === currentPlayerLower &&
+      index < 3 &&
+      !claimedRanks.includes(index + 1)
+    )
+  }, [isPastDay, currentPlayer, claimedRanks])
 
   // Handle prize claim
   const handleClaim = useCallback(async (rank: number) => {
@@ -212,9 +196,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     try {
-      const dateObj = new Date(displayDate + 'T00:00:00Z')
-      const selectedDay = getDayId(dateObj)
-
       const res = await fetch("/api/claimPrize", {
         method: "POST",
         body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
@@ -227,11 +208,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       // Update claims state
       setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
+      setClaimedRanks(prev => [...prev, rank])
     } catch (err) {
       console.error(err)
       alert("Failed to claim prize")
     }
-  }, [currentPlayer, displayDate])
+  }, [currentPlayer, selectedDay])
 
   // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 
@@ -480,33 +462,27 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-200">
-                  {paginatedRankings.map((entry: RankingEntry, index: number) => {
+                  {paginatedRankings.map((row: RankingEntry, index: number) => {
                     const rank = index + 1
-                    const isClaimed = claims.some((c) => c.rank === rank && c.player.toLowerCase() === entry.player.toLowerCase())
-                    const canClaimThis = canClaim(entry.player, rank)
 
                     return (
-                      <tr key={entry.player}>
+                      <tr key={row.player}>
                         <td>{rank}</td>
-                        <td>{formatAddress(entry.player)}</td>
-                        <td>{entry.totalPoints}</td>
-                        <td>{entry.totalGoldenMoles ?? 0}</td>
-                        <td>{entry.totalErrors ?? 0}</td>
+                        <td>{formatAddress(row.player)}</td>
+                        <td>{row.points}</td>
+                        <td>{row.golden_moles ?? 0}</td>
+                        <td>{row.errors ?? 0}</td>
                         <td>
-                          {canClaimThis ? (
+                          {canClaim(index, row.player) ? (
                             <Button
-                              disabled={isClaimed}
                               onClick={() => handleClaim(rank)}
-                              className={cn(
-                                "text-xs",
-                                isClaimed && "opacity-50 cursor-not-allowed"
-                              )}
+                              className="text-xs"
                             >
-                              {isClaimed ? "Prize already claimed" : "Claim Prize"}
+                              Claim prize
                             </Button>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          ) : claimedRanks.includes(rank) ? (
+                            <span>Prize already claimed</span>
+                          ) : null}
                         </td>
                       </tr>
                     )
