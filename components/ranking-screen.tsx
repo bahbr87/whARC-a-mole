@@ -145,17 +145,51 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     setError(null)
 
     try {
+      // Validate date string
+      if (!date || typeof date !== 'string' || date.trim() === '') {
+        console.error(`[RANKING-SCREEN] Invalid date: ${date}`)
+        setError("Invalid date")
+        setRanking([])
+        setLoading(false)
+        return
+      }
+
       // Parse date string (YYYY-MM-DD) and convert to UTC day
       // Use Date.UTC to avoid timezone issues
       const [year, month, day] = date.split('-').map(Number)
+      
+      if (isNaN(year) || isNaN(month) || isNaN(day)) {
+        console.error(`[RANKING-SCREEN] Invalid date format: ${date}`)
+        setError("Invalid date format")
+        setRanking([])
+        setLoading(false)
+        return
+      }
+      
       const dateObj = new Date(Date.UTC(year, month - 1, day))
       const selectedDay = Math.floor(dateObj.getTime() / 86400000)
       
-      console.log(`[RANKING-SCREEN] Loading ranking for date: ${date}, day: ${selectedDay}`)
+      if (isNaN(selectedDay)) {
+        console.error(`[RANKING-SCREEN] Invalid selectedDay calculated: ${selectedDay} from date: ${date}`)
+        setError("Failed to calculate day")
+        setRanking([])
+        setLoading(false)
+        return
+      }
       
-      const res = await fetch(`/api/rankings?day=${selectedDay}`)
+      const todayDay = Math.floor(Date.now() / 86400000)
+      console.log(`[RANKING-SCREEN] Loading ranking for date: ${date}, day: ${selectedDay}, today: ${todayDay}`)
+      
+      const url = `/api/rankings?day=${selectedDay}`
+      console.log(`[RANKING-SCREEN] Fetching from: ${url}`)
+      
+      const res = await fetch(url)
 
-      if (!res.ok) throw new Error("Failed to fetch rankings")
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error(`[RANKING-SCREEN] API error: ${res.status} - ${errorText}`)
+        throw new Error(`Failed to fetch rankings: ${res.status} ${errorText}`)
+      }
 
       const data = await res.json()
       console.log(`[RANKING-SCREEN] API response for day ${selectedDay}:`, data)

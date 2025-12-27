@@ -36,7 +36,9 @@ export async function POST(req: Request) {
     // Calculate day using the same formula as everywhere else: Math.floor(timestamp / 86400000)
     const day = Math.floor(Date.now() / 86400000);
     
-    const { error } = await supabaseAdmin
+    console.log(`[SAVE-MATCH] Saving match: player=${normalizedPlayer}, points=${points}, day=${day}, timestamp=${timestamp}`);
+    
+    const { error, data: insertedData } = await supabaseAdmin
       .from('matches')
       .insert([{ 
         player: normalizedPlayer, 
@@ -45,7 +47,12 @@ export async function POST(req: Request) {
         errors: errors || 0,
         timestamp, // Explicitly set timestamp column
         day // Calculate and save day field
-      }]);
+      }])
+      .select();
+    
+    if (insertedData) {
+      console.log(`[SAVE-MATCH] Match saved successfully:`, insertedData[0]);
+    }
 
     if (error) {
       console.error('Supabase insert error:', error);
