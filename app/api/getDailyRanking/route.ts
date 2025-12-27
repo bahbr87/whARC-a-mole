@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 /**
  * GET /api/getDailyRanking
@@ -65,83 +65,56 @@ export async function GET(request: Request) {
       dateString = targetDate.toISOString().split('T')[0];
     }
 
-    // Calculate day boundaries in UTC
-    const dayStart = new Date(targetDate);
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const dayEnd = new Date(targetDate);
-    dayEnd.setUTCHours(23, 59, 59, 999);
-
-    const dayStartISO = dayStart.toISOString();
-    const dayEndISO = dayEnd.toISOString();
-
     console.log('[RANKING] Date requested:', dateString);
-    console.log('[RANKING] Day start (UTC):', dayStartISO);
-    console.log('[RANKING] Day end (UTC):', dayEndISO);
+    console.log('[RANKING] Target date (UTC):', targetDate.toISOString());
 
-    // Query using RPC function that handles timestamptz correctly
-    // The RPC function uses SQL: SELECT * FROM matches WHERE DATE(timestamp AT TIME ZONE 'UTC') = target_date
+    // Query matches from Supabase
+    // First, try to query all matches and filter in memory (most reliable)
+    // This ensures we get all data and can filter correctly regardless of timezone issues
     let matches: Array<{ player: string; points: number; timestamp: string }> | null = null;
     let error: any = null;
 
-    try {
-      // Try RPC function first (requires SQL function in Supabase)
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_daily_matches', {
-        target_date: dateString
-      });
+    console.log('[RANKING] Querying all matches from Supabase...');
+    const { data: allMatches, error: allError } = await supabase
+      .from('matches')
+      .select('player, points, timestamp')
+      .order('timestamp', { ascending: false });
 
-      if (!rpcError && rpcData) {
-        matches = rpcData;
-        console.log('[RANKING] Using RPC function - matches found:', matches?.length || 0);
-      } else {
-        // RPC function doesn't exist, use direct query with improved timestamptz handling
-        console.log('[RANKING] RPC function not available, using direct query with timestamptz');
-        
-        // Use a more robust query that works better with timestamptz
-        // Format timestamps as strings that PostgreSQL can parse correctly
-        const { data: queryData, error: queryError } = await supabase
-          .from('matches')
-          .select('player, points, timestamp')
-          .gte('timestamp', dayStartISO)
-          .lte('timestamp', dayEndISO);
+    if (allError) {
+      console.error('[RANKING] Error querying matches:', allError);
+      error = allError;
+    } else {
+      console.log(`[RANKING] Total matches in database: ${allMatches?.length || 0}`);
+      
+      if (allMatches && allMatches.length > 0) {
+        // Log first few matches for debugging
+        console.log('[RANKING] Sample matches (first 5):');
+        allMatches.slice(0, 5).forEach((m, idx) => {
+          const matchDate = m.timestamp ? new Date(m.timestamp).toISOString().split('T')[0] : 'N/A';
+          console.log(`  [${idx + 1}] player: ${m.player}, points: ${m.points}, timestamp: ${m.timestamp}, date: ${matchDate}`);
+        });
 
-        matches = queryData;
-        error = queryError;
-
-        if (error) {
-          console.error('[RANKING] Direct query error:', error);
-          // Try alternative: query all and filter in memory (fallback)
-          console.log('[RANKING] Trying fallback: query all matches and filter in memory');
-          const { data: allMatches, error: allError } = await supabase
-            .from('matches')
-            .select('player, points, timestamp');
-
-          if (!allError && allMatches) {
-            // Filter in memory by comparing dates
-            const filtered = allMatches.filter((m: { timestamp: string }) => {
-              if (!m.timestamp) return false;
-              const matchDate = new Date(m.timestamp);
-              const matchDateStr = matchDate.toISOString().split('T')[0];
-              return matchDateStr === dateString;
-            });
-            matches = filtered;
-            error = null;
-            console.log('[RANKING] Fallback filter: found', matches?.length || 0, 'matches');
-          } else {
-            error = allError;
+        // Filter matches for the target date
+        const filtered = allMatches.filter((m: { timestamp: string }) => {
+          if (!m.timestamp) {
+            console.warn('[RANKING] Match without timestamp:', m);
+            return false;
           }
-        }
+          const matchDate = new Date(m.timestamp);
+          const matchDateStr = matchDate.toISOString().split('T')[0];
+          const isMatch = matchDateStr === dateString;
+          if (isMatch) {
+            console.log(`[RANKING] ✅ Match found for ${dateString}: player=${m.player}, points=${m.points}, timestamp=${m.timestamp}`);
+          }
+          return isMatch;
+        });
+        
+        matches = filtered;
+        console.log(`[RANKING] Filtered matches for ${dateString}: ${matches.length} matches found`);
+      } else {
+        console.log('[RANKING] No matches found in database');
+        matches = [];
       }
-    } catch (rpcErr) {
-      console.error('[RANKING] RPC error:', rpcErr);
-      // Fallback to direct query
-      const { data: queryData, error: queryError } = await supabase
-        .from('matches')
-        .select('player, points, timestamp')
-        .gte('timestamp', dayStartISO)
-        .lte('timestamp', dayEndISO);
-
-      matches = queryData;
-      error = queryError;
     }
 
     if (error) {
