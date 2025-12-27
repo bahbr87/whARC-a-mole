@@ -159,7 +159,12 @@ function WharcAMoleContent() {
             await fetch("/api/saveMatch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ player: address, points: data.score })
+              body: JSON.stringify({ 
+                player: address, 
+                points: data.score,
+                golden_moles: data.goldenMolesHit,
+                errors: data.errors
+              })
             })
           } catch (err) {
             console.error("Erro ao salvar pontos:", err)

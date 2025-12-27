@@ -78,6 +78,8 @@ interface RankingScreenProps {
 type Player = {
   player: string
   totalPoints: number
+  totalGoldenMoles?: number
+  totalErrors?: number
 }
 
 const formatAddress = (address: string) => {
@@ -239,8 +241,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       rank: index + 1,
       player: entry.player,
       score: entry.totalPoints || 0,
-      goldenMoles: 0, // Not available from API
-      errors: 0, // Not available from API
+      goldenMoles: entry.totalGoldenMoles || 0,
+      errors: entry.totalErrors || 0,
     }))
     
     return mapped.slice(startIndex, endIndex)

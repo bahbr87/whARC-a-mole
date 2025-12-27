@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }
 
-    const { player, points } = await req.json();
+    const { player, points, golden_moles, errors } = await req.json();
 
     // Validate required fields
     if (!player || points === undefined) {
@@ -38,6 +38,8 @@ export async function POST(req: Request) {
       .insert([{ 
         player: normalizedPlayer, 
         points,
+        golden_moles: golden_moles || 0,
+        errors: errors || 0,
         timestamp // Explicitly set timestamp column
       }]);
 

@@ -71,13 +71,13 @@ export async function GET(request: Request) {
     // Query matches from Supabase
     // First, try to query all matches and filter in memory (most reliable)
     // This ensures we get all data and can filter correctly regardless of timezone issues
-    let matches: Array<{ player: string; points: number; timestamp: string }> | null = null;
+    let matches: Array<{ player: string; points: number; golden_moles?: number; errors?: number; timestamp: string }> | null = null;
     let error: any = null;
 
     console.log('[RANKING] Querying all matches from Supabase...');
     const { data: allMatches, error: allError } = await supabase
       .from('matches')
-      .select('player, points, timestamp')
+      .select('player, points, golden_moles, errors, timestamp')
       .order('timestamp', { ascending: false });
 
     if (allError) {
@@ -138,18 +138,36 @@ export async function GET(request: Request) {
       return NextResponse.json({ date: dateString, players: [] });
     }
 
-    // Aggregate points by player (case-insensitive)
-    const rankingMap: Record<string, number> = {};
-    matches.forEach((match: { player: string; points: number; timestamp: string }) => {
+    // Aggregate points, golden_moles, and errors by player (case-insensitive)
+    const rankingMap: Record<string, { totalPoints: number; totalGoldenMoles: number; totalErrors: number }> = {};
+    matches.forEach((match: { player: string; points: number; golden_moles?: number; errors?: number; timestamp: string }) => {
       const player = match.player.toLowerCase();
       const points = match.points || 0;
-      rankingMap[player] = (rankingMap[player] || 0) + points;
+      const goldenMoles = match.golden_moles || 0;
+      const errors = match.errors || 0;
+      
+      if (!rankingMap[player]) {
+        rankingMap[player] = { totalPoints: 0, totalGoldenMoles: 0, totalErrors: 0 };
+      }
+      
+      rankingMap[player].totalPoints += points;
+      rankingMap[player].totalGoldenMoles += goldenMoles;
+      rankingMap[player].totalErrors += errors;
     });
 
-    // Convert to array and sort by totalPoints descending
+    // Convert to array and sort by: score (desc), golden_moles (desc), errors (asc)
     const players = Object.entries(rankingMap)
-      .map(([player, totalPoints]) => ({ player, totalPoints }))
-      .sort((a, b) => b.totalPoints - a.totalPoints);
+      .map(([player, data]) => ({ 
+        player, 
+        totalPoints: data.totalPoints,
+        totalGoldenMoles: data.totalGoldenMoles,
+        totalErrors: data.totalErrors
+      }))
+      .sort((a, b) => {
+        if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+        if (b.totalGoldenMoles !== a.totalGoldenMoles) return b.totalGoldenMoles - a.totalGoldenMoles;
+        return a.totalErrors - b.totalErrors;
+      });
 
     console.log('[RANKING] Returning', players.length, 'players for date', dateString);
     if (players.length > 0) {

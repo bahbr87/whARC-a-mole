@@ -15,17 +15,14 @@ export async function GET(request: NextRequest) {
 
     const day = parseInt(dayParam)
 
-    // day → dias desde epoch
-    const dayStart = new Date(day * 86400000)
-    const dayEnd = new Date(dayStart.getTime() + 86400000 - 1)
-
-    console.log("📅 Filtering from:", dayStart, "to:", dayEnd)
-
     const { data, error } = await supabase
       .from("matches")
-      .select("*")
-      .gte("timestamp", dayStart.toISOString())
-      .lte("timestamp", dayEnd.toISOString())
+      .select("player, points, golden_moles, errors, timestamp")
+      .gte("timestamp", new Date(day * 86400000).toISOString())
+      .lte("timestamp", new Date((day + 1) * 86400000 - 1).toISOString())
+      .order("points", { ascending: false })
+      .order("golden_moles", { ascending: false })
+      .order("errors", { ascending: true })
 
     if (error) {
       console.error("Supabase error:", error)
@@ -36,24 +33,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ day, ranking: [] })
     }
 
-    // aggregate player totals
+    // Aggregate player totals with golden_moles and errors
     const players = new Map<
       string,
-      { player: string; score: number }
+      { player: string; score: number; goldenMoles: number; errors: number }
     >()
 
     for (const row of data) {
       const addr = row.player.toLowerCase()
       if (!players.has(addr)) {
-        players.set(addr, { player: addr, score: 0 })
+        players.set(addr, { player: addr, score: 0, goldenMoles: 0, errors: 0 })
       }
 
-      players.get(addr)!.score += row.points
+      const playerData = players.get(addr)!
+      playerData.score += row.points || 0
+      playerData.goldenMoles += row.golden_moles || 0
+      playerData.errors += row.errors || 0
     }
 
-    const ranking = Array.from(players.values()).sort(
-      (a, b) => b.score - a.score
-    )
+    // Sort by score (desc), then golden_moles (desc), then errors (asc)
+    const ranking = Array.from(players.values()).sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      if (b.goldenMoles !== a.goldenMoles) return b.goldenMoles - a.goldenMoles
+      return a.errors - b.errors
+    }).map(row => ({
+      address: row.player,
+      score: row.score,
+      goldenMoles: row.goldenMoles,
+      errors: row.errors
+    }))
 
     return NextResponse.json({
       day,
