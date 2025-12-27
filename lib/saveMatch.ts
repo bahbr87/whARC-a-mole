@@ -12,7 +12,7 @@ export function saveMatch(player: string, points: number) {
     }
     
     // Read existing matches or create empty array
-    let matches: Array<{ player: string; points: number; timestamp: string }> = [];
+    let matches: Array<{ player: string; points: number; timestamp: number }> = [];
     if (fs.existsSync(filePath)) {
       try {
         const data = fs.readFileSync(filePath, "utf-8");
@@ -25,24 +25,20 @@ export function saveMatch(player: string, points: number) {
       }
     }
     
-    // Ensure matches is an array
     if (!Array.isArray(matches)) {
       matches = [];
     }
     
-    // Add new match
+    // Save timestamp as NUMBER (required by daily-results)
     matches.push({
       player: player.toLowerCase(),
       points,
-      timestamp: new Date().toISOString()
+      timestamp: Date.now()   // <-- ⭐️ IMPORTANTE
     });
     
-    // Write back to file
     try {
       fs.writeFileSync(filePath, JSON.stringify(matches, null, 2), "utf-8");
     } catch (error: any) {
-      // In Vercel, filesystem is read-only, so this will fail silently
-      // Log warning but don't throw
       if (error.code === "EACCES" || error.code === "EROFS") {
         console.warn("⚠️ Cannot write matches.json (read-only filesystem in Vercel)");
         return;
@@ -51,9 +47,5 @@ export function saveMatch(player: string, points: number) {
     }
   } catch (error) {
     console.error("Error saving match:", error);
-    // Don't throw - allow game to continue even if save fails
   }
 }
-
-
-
