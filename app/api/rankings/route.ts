@@ -29,40 +29,31 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
   }
 }
 
-// GET /api/rankings - Get top 3 players for a day
+// GET /api/rankings - Get ranking for a day
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
-    const dayParam = url.searchParams.get("day")
-
-    if (!dayParam) {
-      return NextResponse.json({ error: "Missing day parameter" }, { status: 400 })
-    }
+    const dayParam = url.searchParams.get('day')
+    
+    if (!dayParam) return NextResponse.json({ error: "Missing day parameter" }, { status: 400 })
 
     const day = parseInt(dayParam, 10)
-    if (isNaN(day)) {
-      return NextResponse.json({ error: "Invalid day parameter" }, { status: 400 })
-    }
+    if (isNaN(day)) return NextResponse.json({ error: "Invalid day parameter" }, { status: 400 })
 
-    // Fetch top 3 for that day
-    const { data: topPlayers, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("matches")
-      .select("player, score, golden_moles, errors")
+      .select("player, points, golden_moles, errors")
       .eq("day", day)
-      .order("score", { ascending: false })
+      .order("points", { ascending: false })
       .order("golden_moles", { ascending: false })
       .order("errors", { ascending: true })
-      .limit(3)
 
-    if (error) {
-      console.error("[RANKINGS] Error fetching matches:", error)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
-    }
+    if (error) return NextResponse.json({ error: "Database error" }, { status: 500 })
+    return NextResponse.json({ ranking: data || [] }, { status: 200 })
 
-    return NextResponse.json({ topPlayers: topPlayers || [] }, { status: 200 })
   } catch (err) {
-    console.error("[RANKINGS] Error fetching matches:", err)
-    return NextResponse.json({ error: "Failed to fetch rankings" }, { status: 500 })
+    console.error(err)
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 })
   }
 }
 

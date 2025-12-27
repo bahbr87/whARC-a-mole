@@ -86,11 +86,10 @@ type Player = {
 // Type for ranking entry with claim status
 interface RankingEntry {
   rank: number
-  address: string
-  score: number
-  goldenMoles?: number
-  errors?: number
-  canClaim?: boolean
+  player: string
+  points: number
+  golden_moles: number
+  errors: number
   claimed?: boolean
 }
 
@@ -175,30 +174,32 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
       
       const response = await res.json()
-      const topPlayers = response.topPlayers || []
-      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, topPlayers)
+      const rankingData = response.ranking || []
+      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, rankingData)
       
-      // Map topPlayers to RankingEntry format
-      const todayDay = Math.floor(new Date().getTime() / 86400000)
-      const rankingData: RankingEntry[] = topPlayers.map((row: any, index: number) => {
-        const rank = index + 1
-        const address = row.player
-        const canClaim = selectedDay < todayDay && rank <= 3 && address.toLowerCase() === currentPlayer?.toLowerCase()
-        
-        return {
-          rank,
-          address,
-          score: row.score,
-          goldenMoles: row.golden_moles || 0,
-          errors: row.errors || 0,
-          canClaim,
-          claimed: false // will be updated from prizes_claimed if needed
-        }
-      })
+      // Load claims for this day
+      const claimsRes = await fetch(`/api/claimPrize?day=${selectedDay}`)
+      const claimsData = await claimsRes.json()
+      const claimsMap = new Map<string, boolean>()
+      if (claimsData.claims) {
+        claimsData.claims.forEach((c: { player: string; rank: number }) => {
+          claimsMap.set(`${c.rank}-${c.player.toLowerCase()}`, true)
+        })
+      }
       
-      setRanking(rankingData)
+      // Map ranking data and add claimed status
+      const enrichedRanking: RankingEntry[] = rankingData.map((row: any, index: number) => ({
+        rank: index + 1,
+        player: row.player,
+        points: row.points,
+        golden_moles: row.golden_moles || 0,
+        errors: row.errors || 0,
+        claimed: claimsMap.has(`${index + 1}-${row.player.toLowerCase()}`) || false
+      }))
+      
+      setRanking(enrichedRanking)
       setDisplayDate(date)
-      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, rankingData)
+      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, enrichedRanking)
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
@@ -230,11 +231,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       if (data.error) return alert(data.error)
 
-      setRanking(prev =>
-        prev.map(p =>
-          p.rank === rank ? { ...p, claimed: true } : p
-        )
-      )
+      setRanking(prev => prev.map(p => p.rank === rank ? { ...p, claimed: true } : p))
     } catch {
       alert("Failed to claim prize")
     }
@@ -480,82 +477,38 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   <tr>
                     <th className="px-4 py-3 text-left font-bold">Rank</th>
                     <th className="px-4 py-3 text-left font-bold">Player</th>
-                    <th className="px-4 py-3 text-right font-bold">Score</th>
+                    <th className="px-4 py-3 text-right font-bold">Points</th>
                     <th className="px-4 py-3 text-center font-bold">Golden</th>
                     <th className="px-4 py-3 text-center font-bold">Errors</th>
                     <th className="px-4 py-3 text-center font-bold">Prize</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-200">
-                  {paginatedRankings.map((player, index) => {
-                    const globalIndex = (currentPage - 1) * itemsPerPage + index
-                    // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.address ou currentPlayer são undefined
-                    // ANTES: player.address.toLowerCase() quebrava se player.address fosse undefined
-                    // PROBLEMA: Backend pode enviar jogador sem address, ou currentPlayer pode ainda não ter carregado
-                    // AGORA: Usamos optional chaining e verificamos se ambos existem antes de comparar
-                    const playerAddressLower = player?.address?.toLowerCase?.() || ""
-                    const isCurrentPlayer =
-                      playerAddressLower !== "" &&
-                      currentPlayer?.toLowerCase?.() === playerAddressLower
-                    const isTop3 = globalIndex < 3
-
-                    return (
-                      <tr
-                        key={player.rank}
-                        className={cn(
-                          "transition-colors",
-                          isCurrentPlayer && "bg-amber-100 font-bold",
-                          !isCurrentPlayer && "hover:bg-amber-50",
-                          isTop3 && !isCurrentPlayer && "bg-amber-50/50",
+                  {paginatedRankings.map((p: RankingEntry, i: number) => (
+                    <tr key={p.player}>
+                      <td>{i + 1}</td>
+                      <td>{formatAddress(p.player)}</td>
+                      <td>{p.points}</td>
+                      <td>{p.golden_moles}</td>
+                      <td>{p.errors}</td>
+                      <td>
+                        {i < 3 ? (
+                          <Button
+                            disabled={p.claimed}
+                            onClick={() => handleClaim(i + 1)}
+                            className={cn(
+                              "text-xs",
+                              p.claimed && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {p.claimed ? "Prize already claimed" : "Claim Prize"}
+                          </Button>
+                        ) : (
+                          <span className="text-gray-400">-</span>
                         )}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {isTop3 && (
-                              <span className="text-xl">
-                                {globalIndex === 0 && "🥇"}
-                                {globalIndex === 1 && "🥈"}
-                                {globalIndex === 2 && "🥉"}
-                              </span>
-                            )}
-                            <span className={cn(isTop3 && "font-bold text-amber-900")}>#{player.rank}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-amber-900">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{formatAddress(player.address)}</span>
-                            {isCurrentPlayer && (
-                              <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">YOU</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.score.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="inline-flex items-center gap-1">
-                            <Star className="w-4 h-4 text-yellow-600" />
-                            {player.goldenMoles}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
-                        <td className="px-4 py-3 text-center">
-                          {player.rank <= 3 ? (
-                            <Button
-                              disabled={!player.canClaim || player.claimed}
-                              onClick={() => handleClaim(player.rank)}
-                              className={cn(
-                                "text-xs",
-                                (!player.canClaim || player.claimed) && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
-                            </Button>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
