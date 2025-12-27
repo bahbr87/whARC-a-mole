@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect, useCallback } from "react"
+import { useMemo, useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -125,11 +125,24 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
   
+  // Use ref to track the last loaded date to prevent duplicate calls
+  const lastLoadedDateRef = useRef<string | null>(null)
+  const isLoadingRef = useRef(false)
+  
   console.log(`🎬 [RANKING-SCREEN] Current state - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, displayDate: ${displayDate}`)
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
+    // Prevent duplicate calls for the same date
+    if (isLoadingRef.current && lastLoadedDateRef.current === date) {
+      console.log(`⏸️ [RANKING-SCREEN] loadRanking already in progress for ${date}, skipping`)
+      return
+    }
+    
     console.log(`🚀 [RANKING-SCREEN] loadRanking called with date: ${date}`)
+    isLoadingRef.current = true
+    lastLoadedDateRef.current = date
+    
     try {
       setLoading(true)
       setRanking([])
@@ -198,6 +211,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     } finally {
       console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
+      isLoadingRef.current = false
     }
   }, [])
 
@@ -219,11 +233,26 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // Ensure we have a valid date string
     const today = getTodayDateString()
     const dateToLoad = selectedDate && selectedDate.trim() !== '' ? selectedDate : today
+    
+    // Skip if we already have data for this date and we're not loading
+    if (displayDate === dateToLoad && ranking.length > 0 && !loading) {
+      console.log(`⏸️ [RANKING-SCREEN] Skipping loadRanking - already have data for ${dateToLoad}`)
+      return
+    }
+    
+    // Skip if already loading the same date
+    if (isLoadingRef.current && lastLoadedDateRef.current === dateToLoad) {
+      console.log(`⏸️ [RANKING-SCREEN] Skipping loadRanking - already loading ${dateToLoad}`)
+      return
+    }
+    
     console.log(`🔄 [RANKING-SCREEN] useEffect triggered`)
     console.log(`   - selectedDate prop: ${selectedDate}`)
     console.log(`   - today: ${today}`)
     console.log(`   - dateToLoad: ${dateToLoad}`)
     console.log(`   - current displayDate: ${displayDate}`)
+    console.log(`   - current ranking.length: ${ranking.length}`)
+    console.log(`   - current loading: ${loading}`)
     console.log(`   - calling loadRanking with date: ${dateToLoad}`)
     
     setCurrentPage(1) // Reset page when date changes
