@@ -5,14 +5,30 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const dayParam = url.searchParams.get("day");
 
+    // Log request details for debugging
+    const headers: Record<string, string> = {}
+    req.headers.forEach((value, key) => {
+      headers[key] = value
+    })
+    
     console.log(`[RANKINGS] Request URL: ${req.url}`);
     console.log(`[RANKINGS] dayParam from query: ${dayParam}`);
+    console.log(`[RANKINGS] Request headers:`, JSON.stringify(headers, null, 2));
+    console.log(`[RANKINGS] Referer: ${headers['referer'] || 'N/A'}`);
 
     if (!dayParam) {
       console.error(`[RANKINGS] Missing day parameter in URL: ${req.url}`);
+      console.error(`[RANKINGS] Full request details:`, {
+        url: req.url,
+        method: req.method,
+        headers: headers,
+        referer: headers['referer'] || 'N/A'
+      });
+      // Return empty array instead of error to prevent breaking the app
+      // This allows the app to continue working even if there's a stray request
       return new Response(
-        JSON.stringify({ error: "Missing day parameter", url: req.url }),
-        { status: 400 }
+        JSON.stringify({ ranking: [], error: "Missing day parameter - please use ?day=<dayId>" }),
+        { status: 200 }
       );
     }
 

@@ -10,7 +10,7 @@ import { DailyResultsScreen } from "@/components/daily-results-screen"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { WalletProvider, useWallet } from "@/contexts/wallet-context"
-import { getRankings, saveRanking } from "@/lib/api"
+import { saveRanking } from "@/lib/api"
 import { getDayId } from "@/utils/day"
 import { useDailyResultsPopup } from "@/hooks/use-daily-results-popup"
 
@@ -52,23 +52,13 @@ function WharcAMoleContent() {
   // ✅ Use the new hook for daily results popup
   const { showPopup, handleClose, yesterdayDayId } = useDailyResultsPopup()
 
-  // Load ALL rankings from API on mount (historical persistence)
+  // ⚠️ NOTE: Rankings are now loaded per-day via RankingScreen component
+  // This useEffect is kept for backward compatibility but no longer loads rankings
   useEffect(() => {
-    const loadRankings = async () => {
-      if (rankingsLoaded) return
-      
-      try {
-        // Load ALL rankings (no date filter - historical persistence)
-        const loadedRankings = await getRankings()
-        setRankings(loadedRankings)
-        setRankingsLoaded(true)
-      } catch (error) {
-        console.error("Error loading rankings:", error)
-        setRankingsLoaded(true) // Set to true even on error to prevent infinite retries
-      }
+    if (!rankingsLoaded) {
+      setRankings([])
+      setRankingsLoaded(true)
     }
-
-    loadRankings()
   }, [rankingsLoaded])
 
   useEffect(() => {
@@ -172,13 +162,10 @@ function WharcAMoleContent() {
           
           // Save to API
           const saved = await saveRanking(newEntry)
-          if (saved) {
-            setRankings((prev) => [...prev, newEntry])
-          } else {
-            // Fallback: save locally if API fails
-            setRankings((prev) => [...prev, newEntry])
-            console.warn("Failed to save ranking to API, saved locally only")
+          if (!saved) {
+            console.warn("Failed to save ranking to API")
           }
+          // Note: Rankings are now loaded per-day via RankingScreen, no need to update local state
         } catch (error) {
           console.error("Error saving ranking:", error)
         }
@@ -379,25 +366,8 @@ function WharcAMoleContent() {
     setGameState("daily-results")
   }, [])
 
-  // Reload rankings periodically (historical persistence - no deletion)
-  // Rankings are stored by timestamp, so we can filter by date when needed
-  useEffect(() => {
-    const reloadRankings = async () => {
-      try {
-        const allRankings = await getRankings()
-        setRankings(allRankings)
-      } catch (error) {
-        console.error("Error reloading rankings:", error)
-      }
-    }
-
-    const interval = setInterval(() => {
-      reloadRankings()
-    }, 60000) // Reload every minute
-    reloadRankings() // Reload immediately
-
-    return () => clearInterval(interval)
-  }, [])
+  // ⚠️ NOTE: Rankings are now loaded per-day via RankingScreen component
+  // Periodic reload removed - rankings are fetched on-demand by day
 
   // Debug: Monitor gameState changes
   useEffect(() => {
@@ -446,7 +416,7 @@ function WharcAMoleContent() {
       {gameState === "daily-results" && (
         <DailyResultsScreen
           date={selectedDate}
-          rankings={rankings}
+          rankings={[]}
           currentPlayer={address}
           onBack={handleBackToGame}
           onClaimPrize={handleClaimPrize}

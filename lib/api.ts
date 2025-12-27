@@ -4,19 +4,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api"
 
 export async function getRankings(startDate?: number, endDate?: number): Promise<RankingEntry[]> {
   try {
-    const params = new URLSearchParams()
-    if (startDate) params.append("startDate", startDate.toString())
-    if (endDate) params.append("endDate", endDate.toString())
-
-    const url = `${API_BASE_URL}/rankings${params.toString() ? `?${params.toString()}` : ""}`
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch rankings")
-    }
-
-    const data = await response.json()
-    return data.rankings || []
+    // ⚠️ NOTE: The /api/rankings endpoint now requires a 'day' parameter
+    // This function is kept for backward compatibility but returns empty array
+    // Use /api/rankings?day=<dayId> directly instead
+    console.warn("[API] getRankings() is deprecated. Use /api/rankings?day=<dayId> directly.")
+    return []
   } catch (error) {
     console.error("Error fetching rankings:", error)
     // Fallback to empty array on error
