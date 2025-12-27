@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -110,6 +110,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
+  // This will be updated when selectedDate prop changes
   const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
   
   const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
@@ -119,7 +120,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const maxPages = 10 // 500 players / 50 per page
 
   // Function to load ranking for a specific date
-  const loadRanking = async (date: string) => {
+  const loadRanking = useCallback(async (date: string) => {
     try {
       setLoading(true)
       setRanking([])
@@ -162,15 +163,23 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   // Load ranking on mount and when selectedDate prop changes
   useEffect(() => {
-    const dateToLoad = selectedDate || getTodayDateString()
+    // Ensure we have a valid date string
+    const today = getTodayDateString()
+    const dateToLoad = selectedDate && selectedDate.trim() !== '' ? selectedDate : today
+    console.log(`🔄 [RANKING-SCREEN] useEffect triggered`)
+    console.log(`   - selectedDate prop: ${selectedDate}`)
+    console.log(`   - today: ${today}`)
+    console.log(`   - dateToLoad: ${dateToLoad}`)
+    console.log(`   - current displayDate: ${displayDate}`)
+    
     setCurrentPage(1) // Reset page when date changes
+    setDisplayDate(dateToLoad) // Update display date immediately
     loadRanking(dateToLoad)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]) // Run on mount and when selectedDate changes
+  }, [selectedDate, loadRanking])
 
   const rankings = useMemo(() => {
     // Map the API response to the expected format
@@ -203,7 +212,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const day = String(date.getUTCDate()).padStart(2, '0')
       const dateString = `${year}-${month}-${day}`
       
+      console.log(`📅 [RANKING-SCREEN] Calendar date selected: ${dateString}`)
+      
       setCurrentPage(1) // Reset to first page when changing date
+      setDisplayDate(dateString) // Update display date immediately
       setShowCalendarDialog(false)
       setCalendarSelectedDate(undefined)
       
@@ -253,7 +265,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     onClick={() => {
                       playClickSound()
                       const today = getTodayDateString()
+                      console.log(`📅 [RANKING-SCREEN] Show Today clicked, setting date to: ${today}`)
                       setCurrentPage(1)
+                      setDisplayDate(today) // Update display date immediately
                       loadRanking(today)
                     }}
                     variant="link"

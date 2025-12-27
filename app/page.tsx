@@ -189,6 +189,8 @@ function WharcAMoleContent() {
   }, [])
 
   const handleViewRanking = useCallback(() => {
+    // Reset selectedDate to today when entering ranking
+    setSelectedDate(new Date())
     setGameState("ranking")
   }, [])
 
