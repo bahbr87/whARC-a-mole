@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect, useCallback, useRef } from "react"
+import { useMemo, useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -74,6 +74,12 @@ interface RankingScreenProps {
   selectedDate?: string // formato 'YYYY-MM-DD' - opcional, usa hoje se não fornecido
 }
 
+// Type for player data from API
+type Player = {
+  player: string
+  totalPoints: number
+}
+
 const formatAddress = (address: string) => {
   if (!address) return ""
   return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -105,49 +111,34 @@ const getTodayDateString = () => {
 }
 
 export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults, selectedDate }: RankingScreenProps) {
-  console.log(`🎬 [RANKING-SCREEN] Component rendered - selectedDate prop: ${selectedDate}`)
-  
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
-  // This will be updated when selectedDate prop changes
-  const [displayDate, setDisplayDate] = useState(() => {
-    const initialDate = selectedDate || getTodayDateString()
-    console.log(`🎬 [RANKING-SCREEN] Initializing displayDate: ${initialDate}`)
-    return initialDate
-  })
+  const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
   
-  const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
+  // ✅ CORREÇÃO: Usar apenas um estado principal para armazenar os resultados
+  // ANTES: Havia múltiplos estados (ranking, rankings via useMemo, paginatedRankings)
+  // PROBLEMA: O useMemo que criava 'rankings' podia falhar silenciosamente, deixando rankings vazio
+  // mesmo quando ranking tinha dados. A renderização verificava rankings.length mas usava paginatedRankings.
+  // AGORA: Usamos apenas 'ranking' como fonte única da verdade. Os valores derivados (paginatedRankings)
+  // são calculados diretamente de 'ranking' quando necessário.
+  const [ranking, setRanking] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
-  
-  // Use ref to track the last loaded date to prevent duplicate calls
-  const lastLoadedDateRef = useRef<string | null>(null)
-  const isLoadingRef = useRef(false)
-  
-  console.log(`🎬 [RANKING-SCREEN] Current state - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, displayDate: ${displayDate}`)
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
-    // Prevent duplicate calls for the same date
-    if (isLoadingRef.current && lastLoadedDateRef.current === date) {
-      console.log(`⏸️ [RANKING-SCREEN] loadRanking already in progress for ${date}, skipping`)
-      return
-    }
-    
     console.log(`🚀 [RANKING-SCREEN] loadRanking called with date: ${date}`)
-    isLoadingRef.current = true
-    lastLoadedDateRef.current = date
     
     try {
       setLoading(true)
-      setRanking([])
       setError(null)
-      console.log(`📅 [RANKING-SCREEN] State reset - loading: true, ranking: [], error: null`)
+      // ✅ CORREÇÃO: NÃO limpar ranking aqui - isso causava flash de "No players" antes dos dados chegarem
+      // O ranking só será atualizado quando os dados chegarem com sucesso
       
       const url = `/api/getDailyRanking?date=${date}`
       console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${date}, URL: ${url}`)
@@ -161,29 +152,21 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       const data = await res.json()
       console.log(`✅ [RANKING-SCREEN] Response received for ${date}:`, data)
-      console.log(`✅ [RANKING-SCREEN] Response type:`, typeof data)
-      console.log(`✅ [RANKING-SCREEN] Has 'players' key:`, 'players' in data)
       console.log(`✅ [RANKING-SCREEN] players is array:`, Array.isArray(data?.players))
       console.log(`✅ [RANKING-SCREEN] players length:`, data?.players?.length)
       
-      // Handle new format: { date: "YYYY-MM-DD", players: [...] }
+      // ✅ CORREÇÃO: Sempre usar setRanking(data.players) diretamente após o fetch
+      // ANTES: Havia lógica complexa com criação de novo array, verificações extras, etc.
+      // PROBLEMA: Isso podia causar problemas de referência ou timing que faziam o estado não atualizar
+      // AGORA: Atualizamos diretamente com os dados da API, garantindo que o estado seja atualizado
       if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
         console.log(`✅ [RANKING-SCREEN] Setting ranking with ${data.players.length} players`)
         console.log(`✅ [RANKING-SCREEN] Players data:`, JSON.stringify(data.players, null, 2))
         
-        // Verify players array structure
-        if (data.players.length > 0) {
-          console.log(`✅ [RANKING-SCREEN] First player sample:`, data.players[0])
-          console.log(`✅ [RANKING-SCREEN] First player has 'player' key:`, 'player' in data.players[0])
-          console.log(`✅ [RANKING-SCREEN] First player has 'totalPoints' key:`, 'totalPoints' in data.players[0])
-        }
-        
-        // Create a new array to ensure React detects the change
-        const newRanking = [...data.players]
-        console.log(`✅ [RANKING-SCREEN] Creating new ranking array with ${newRanking.length} players`)
-        console.log(`✅ [RANKING-SCREEN] New ranking array:`, JSON.stringify(newRanking, null, 2))
-        setRanking(newRanking)
-        console.log(`✅ [RANKING-SCREEN] setRanking called with ${newRanking.length} players`)
+        // ✅ CORREÇÃO: setRanking(data.players) diretamente - sem criar novo array ou verificações extras
+        // O React detecta a mudança automaticamente se o array for diferente
+        setRanking(data.players)
+        console.log(`✅ [RANKING-SCREEN] setRanking called with ${data.players.length} players`)
         
         // Update display date if provided by API
         if (data.date && data.date !== date) {
@@ -206,27 +189,15 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
+      // ✅ CORREÇÃO: Só limpar ranking em caso de erro - não limpar durante o loading
       setRanking([])
-      setLoading(false) // Ensure loading is set to false even on error
     } finally {
       console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
-      isLoadingRef.current = false
     }
   }, [])
 
-  // Monitor ranking state changes
-  useEffect(() => {
-    console.log(`📊 [RANKING-SCREEN] Ranking state changed - length: ${ranking.length}`)
-    if (ranking.length > 0) {
-      console.log(`📊 [RANKING-SCREEN] Ranking data:`, JSON.stringify(ranking, null, 2))
-      console.log(`📊 [RANKING-SCREEN] First ranking entry:`, ranking[0])
-      console.log(`📊 [RANKING-SCREEN] First entry type:`, typeof ranking[0])
-      console.log(`📊 [RANKING-SCREEN] First entry keys:`, ranking[0] ? Object.keys(ranking[0]) : 'null')
-    } else {
-      console.log(`📊 [RANKING-SCREEN] Ranking is empty array`)
-    }
-  }, [ranking])
+  // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 
   // Load ranking on mount and when selectedDate prop changes
   useEffect(() => {
@@ -251,46 +222,31 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate])
 
-  const rankings = useMemo(() => {
-    console.log(`🔄 [RANKING-SCREEN] useMemo rankings - ranking.length: ${ranking.length}`)
-    console.log(`🔄 [RANKING-SCREEN] ranking data:`, ranking)
-    
-    // Safety check: ensure ranking is an array
-    if (!Array.isArray(ranking)) {
-      console.error(`❌ [RANKING-SCREEN] ranking is not an array:`, typeof ranking, ranking)
-      return []
-    }
-    
-    // Map the API response to the expected format
-    const mapped = ranking
-      .map((entry, index) => {
-        // Safety check: ensure entry has required fields
-        if (!entry || typeof entry !== 'object' || !entry.player) {
-          console.error(`❌ [RANKING-SCREEN] Invalid entry at index ${index}:`, entry)
-          return null
-        }
-        return {
-          rank: index + 1,
-          player: entry.player,
-          score: entry.totalPoints || 0,
-          goldenMoles: 0, // Not available from API
-          errors: 0, // Not available from API
-        }
-      })
-      .filter((item): item is { rank: number; player: string; score: number; goldenMoles: number; errors: number } => item !== null)
-    
-    console.log(`🔄 [RANKING-SCREEN] mapped rankings (${mapped.length} valid entries):`, mapped)
-    return mapped
-  }, [ranking])
+  // ✅ CORREÇÃO: Removido useMemo para 'rankings' - não é mais necessário
+  // ANTES: rankings era um useMemo que mapeava ranking para um formato diferente
+  // PROBLEMA: Se o mapeamento falhasse, rankings ficava vazio mesmo com ranking cheio
+  // AGORA: Fazemos o mapeamento diretamente na renderização, usando ranking como fonte única
 
-  // Pagination logic
+  // ✅ CORREÇÃO: Paginação calculada diretamente de 'ranking'
+  // Mantemos paginatedRankings como useMemo para performance, mas derivado diretamente de 'ranking'
   const paginatedRankings = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
-    return rankings.slice(startIndex, endIndex)
-  }, [rankings, currentPage])
+    
+    // ✅ CORREÇÃO: Mapear ranking diretamente aqui, sem criar estado intermediário
+    // Isso garante que os dados sempre fluam corretamente de ranking para a renderização
+    const mapped = ranking.map((entry, index) => ({
+      rank: index + 1,
+      player: entry.player,
+      score: entry.totalPoints || 0,
+      goldenMoles: 0, // Not available from API
+      errors: 0, // Not available from API
+    }))
+    
+    return mapped.slice(startIndex, endIndex)
+  }, [ranking, currentPage])
 
-  const totalPages = Math.min(maxPages, Math.ceil(rankings.length / itemsPerPage))
+  const totalPages = Math.min(maxPages, Math.ceil(ranking.length / itemsPerPage))
 
   const isTodaySelected = displayDate === getTodayDateString()
 
@@ -458,7 +414,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         <Card className="bg-white/95 backdrop-blur border-4 border-amber-900 overflow-hidden">
           <div className="overflow-x-auto">
             {(() => {
-              console.log(`🎨 [RANKING-SCREEN] Rendering - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, rankings.length: ${rankings.length}, paginatedRankings.length: ${paginatedRankings.length}`)
+              console.log(`🎨 [RANKING-SCREEN] Rendering - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, paginatedRankings.length: ${paginatedRankings.length}`)
               return null
             })()}
             {loading ? (
@@ -469,14 +425,22 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               <div className="text-center py-8">
                 <p className="text-red-600">{error}</p>
               </div>
-            ) : rankings.length === 0 ? (
+            ) : ranking.length === 0 ? (
+              // ✅ CORREÇÃO: Verificar ranking.length diretamente, não rankings.length
+              // ANTES: Verificava rankings.length (que vinha de um useMemo que podia falhar)
+              // PROBLEMA: rankings podia estar vazio mesmo com ranking cheio
+              // AGORA: Verificamos ranking diretamente, que é a fonte única da verdade
               <div className="text-center py-8">
                 <p className="text-gray-600">No players found for this day.</p>
                 <p className="text-xs text-gray-400 mt-2">
-                  Debug: ranking.length = {ranking.length}, rankings.length = {rankings.length}, loading = {String(loading)}, error = {error || 'null'}
+                  Debug: ranking.length = {ranking.length}, loading = {String(loading)}, error = {error || 'null'}
                 </p>
               </div>
             ) : (
+              // ✅ CORREÇÃO: Renderizar usando paginatedRankings que é derivado diretamente de ranking
+              // ANTES: Usava paginatedRankings que vinha de rankings (useMemo intermediário)
+              // PROBLEMA: Se o useMemo intermediário falhasse, paginatedRankings ficava vazio
+              // AGORA: paginatedRankings é calculado diretamente de ranking, garantindo que os dados fluam corretamente
               <table className="w-full">
                 <thead className="bg-amber-600 text-white">
                   <tr>
