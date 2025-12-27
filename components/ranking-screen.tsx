@@ -105,19 +105,27 @@ const getTodayDateString = () => {
 }
 
 export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults, selectedDate }: RankingScreenProps) {
+  console.log(`🎬 [RANKING-SCREEN] Component rendered - selectedDate prop: ${selectedDate}`)
+  
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
   // This will be updated when selectedDate prop changes
-  const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
+  const [displayDate, setDisplayDate] = useState(() => {
+    const initialDate = selectedDate || getTodayDateString()
+    console.log(`🎬 [RANKING-SCREEN] Initializing displayDate: ${initialDate}`)
+    return initialDate
+  })
   
   const [ranking, setRanking] = useState<Array<{ player: string; totalPoints: number }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
+  
+  console.log(`🎬 [RANKING-SCREEN] Current state - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, displayDate: ${displayDate}`)
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
@@ -137,9 +145,15 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       const data = await res.json()
       console.log(`✅ [RANKING-SCREEN] Response received for ${date}:`, data)
+      console.log(`✅ [RANKING-SCREEN] Response type:`, typeof data)
+      console.log(`✅ [RANKING-SCREEN] Has 'players' key:`, 'players' in data)
+      console.log(`✅ [RANKING-SCREEN] players is array:`, Array.isArray(data?.players))
+      console.log(`✅ [RANKING-SCREEN] players length:`, data?.players?.length)
       
       // Handle new format: { date: "YYYY-MM-DD", players: [...] }
       if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
+        console.log(`✅ [RANKING-SCREEN] Setting ranking with ${data.players.length} players`)
+        console.log(`✅ [RANKING-SCREEN] Players data:`, data.players)
         setRanking(data.players)
         // Update display date if provided by API
         if (data.date && data.date !== date) {
@@ -147,13 +161,16 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         } else {
           setDisplayDate(date)
         }
+        console.log(`✅ [RANKING-SCREEN] Ranking state updated, displayDate: ${data.date || date}`)
       } 
       // Fallback: handle old format (array directly) for backward compatibility
       else if (Array.isArray(data)) {
+        console.log(`✅ [RANKING-SCREEN] Using fallback format, setting ranking with ${data.length} items`)
         setRanking(data)
         setDisplayDate(date)
       } 
       else {
+        console.error(`❌ [RANKING-SCREEN] Invalid response format:`, data)
         throw new Error('Invalid response format from API')
       }
     } catch (err) {
@@ -164,6 +181,14 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       setLoading(false)
     }
   }, [])
+
+  // Monitor ranking state changes
+  useEffect(() => {
+    console.log(`📊 [RANKING-SCREEN] Ranking state changed - length: ${ranking.length}`)
+    if (ranking.length > 0) {
+      console.log(`📊 [RANKING-SCREEN] Ranking data:`, ranking)
+    }
+  }, [ranking])
 
   // Load ranking on mount and when selectedDate prop changes
   useEffect(() => {
@@ -182,14 +207,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [selectedDate, loadRanking])
 
   const rankings = useMemo(() => {
+    console.log(`🔄 [RANKING-SCREEN] useMemo rankings - ranking.length: ${ranking.length}`)
+    console.log(`🔄 [RANKING-SCREEN] ranking data:`, ranking)
     // Map the API response to the expected format
-    return ranking.map((entry, index) => ({
+    const mapped = ranking.map((entry, index) => ({
       rank: index + 1,
       player: entry.player,
       score: entry.totalPoints,
       goldenMoles: 0, // Not available from API
       errors: 0, // Not available from API
     }))
+    console.log(`🔄 [RANKING-SCREEN] mapped rankings:`, mapped)
+    return mapped
   }, [ranking])
 
   // Pagination logic
@@ -366,6 +395,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         {/* Rankings Table */}
         <Card className="bg-white/95 backdrop-blur border-4 border-amber-900 overflow-hidden">
           <div className="overflow-x-auto">
+            {(() => {
+              console.log(`🎨 [RANKING-SCREEN] Rendering - loading: ${loading}, error: ${error}, ranking.length: ${ranking.length}, rankings.length: ${rankings.length}, paginatedRankings.length: ${paginatedRankings.length}`)
+              return null
+            })()}
             {loading ? (
               <div className="text-center py-8">
                 <p className="text-gray-600">Loading ranking...</p>
