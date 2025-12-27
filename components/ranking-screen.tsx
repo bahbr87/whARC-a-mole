@@ -469,7 +469,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               <div className="text-center py-8">
                 <p className="text-red-600">{error}</p>
               </div>
-            ) : ranking.length === 0 ? (
+            ) : rankings.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-600">No players found for this day.</p>
                 <p className="text-xs text-gray-400 mt-2">
