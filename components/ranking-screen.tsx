@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { ArrowLeft, Trophy, Star, Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { RankingEntry } from "@/app/page"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -82,6 +82,16 @@ type Player = {
   totalErrors?: number
 }
 
+// Type for ranking entry with claim status
+interface RankingEntry {
+  rank: number
+  address: string
+  score: number
+  goldenMoles?: number
+  errors?: number
+  claimed?: boolean
+}
+
 const formatAddress = (address: string) => {
   if (!address) return ""
   return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -129,6 +139,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [ranking, setRanking] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [claimedStatus, setClaimedStatus] = useState<Map<string, boolean>>(new Map())
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
@@ -188,6 +199,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         console.error(`❌ [RANKING-SCREEN] Invalid response format:`, data)
         throw new Error('Invalid response format from API')
       }
+
+      // Load claim status for this day
+      await loadClaimStatus(date)
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
@@ -198,6 +212,67 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       setLoading(false)
     }
   }, [])
+
+  // Load claim status for a specific date
+  const loadClaimStatus = useCallback(async (date: string) => {
+    try {
+      const dateObj = new Date(date + 'T00:00:00Z')
+      const day = getDayId(dateObj)
+      
+      const res = await fetch(`/api/claimPrize?day=${day}`, { method: 'GET' })
+      if (res.ok) {
+        const data = await res.json()
+        const claimsMap = new Map<string, boolean>()
+        if (Array.isArray(data.claims)) {
+          data.claims.forEach((claim: { player: string; rank: number }) => {
+            const key = `${claim.player.toLowerCase()}-${claim.rank}`
+            claimsMap.set(key, true)
+          })
+        }
+        setClaimedStatus(claimsMap)
+      }
+    } catch (err) {
+      console.error("[RANKING-SCREEN] Error loading claim status:", err)
+    }
+  }, [])
+
+  // Handle prize claim
+  const handleClaim = useCallback(async (rank: number) => {
+    if (!currentPlayer) {
+      alert("Wallet not connected")
+      return
+    }
+
+    try {
+      const dateObj = new Date(displayDate + 'T00:00:00Z')
+      const day = getDayId(dateObj)
+
+      const res = await fetch("/api/claimPrize", {
+        method: "POST",
+        body: JSON.stringify({ day, rank, player: currentPlayer }),
+        headers: { "Content-Type": "application/json" }
+      })
+
+      const data = await res.json()
+
+      if (data.error) {
+        alert(data.error)
+        return
+      }
+
+      // Update state to disable the button
+      const playerAddressLower = currentPlayer?.toLowerCase?.() || ""
+      const key = `${playerAddressLower}-${rank}`
+      setClaimedStatus(prev => {
+        const newMap = new Map(prev)
+        newMap.set(key, true)
+        return newMap
+      })
+    } catch (err) {
+      console.error("[RANKING-SCREEN] Error claiming prize:", err)
+      alert("Failed to claim prize")
+    }
+  }, [currentPlayer, displayDate])
 
   // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 
@@ -237,16 +312,25 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     
     // ✅ CORREÇÃO: Mapear ranking diretamente aqui, sem criar estado intermediário
     // Isso garante que os dados sempre fluam corretamente de ranking para a renderização
-    const mapped = ranking.map((entry, index) => ({
-      rank: index + 1,
-      player: entry.player,
-      score: entry.totalPoints || 0,
-      goldenMoles: entry.totalGoldenMoles || 0,
-      errors: entry.totalErrors || 0,
-    }))
+    const mapped = ranking.map((entry, index) => {
+      const globalRank = index + 1
+      const playerAddressLower = entry?.player?.toLowerCase?.() || ""
+      const key = `${playerAddressLower}-${globalRank}`
+      const claimed = claimedStatus.get(key) || false
+
+      return {
+        rank: globalRank,
+        address: entry.player,
+        player: entry.player,
+        score: entry.totalPoints || 0,
+        goldenMoles: entry.totalGoldenMoles || 0,
+        errors: entry.totalErrors || 0,
+        claimed,
+      }
+    })
     
     return mapped.slice(startIndex, endIndex)
-  }, [ranking, currentPage])
+  }, [ranking, currentPage, claimedStatus])
 
   const totalPages = Math.min(maxPages, Math.ceil(ranking.length / itemsPerPage))
 
@@ -451,16 +535,17 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     <th className="px-4 py-3 text-right font-bold">Score</th>
                     <th className="px-4 py-3 text-center font-bold">Golden</th>
                     <th className="px-4 py-3 text-center font-bold">Errors</th>
+                    <th className="px-4 py-3 text-center font-bold">Prize</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-200">
                   {paginatedRankings.map((player, index) => {
                     const globalIndex = (currentPage - 1) * itemsPerPage + index
-                    // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.player ou currentPlayer são undefined
-                    // ANTES: player.player.toLowerCase() quebrava se player.player fosse undefined
-                    // PROBLEMA: Backend pode enviar jogador sem address/player, ou currentPlayer pode ainda não ter carregado
+                    // ✅ CORREÇÃO: Usar optional chaining para evitar erro quando player.address ou currentPlayer são undefined
+                    // ANTES: player.address.toLowerCase() quebrava se player.address fosse undefined
+                    // PROBLEMA: Backend pode enviar jogador sem address, ou currentPlayer pode ainda não ter carregado
                     // AGORA: Usamos optional chaining e verificamos se ambos existem antes de comparar
-                    const playerAddressLower = player?.player?.toLowerCase?.() || ""
+                    const playerAddressLower = (player?.address || player?.player)?.toLowerCase?.() || ""
                     const isCurrentPlayer =
                       playerAddressLower !== "" &&
                       currentPlayer?.toLowerCase?.() === playerAddressLower
@@ -468,7 +553,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
                     return (
                       <tr
-                        key={player.player}
+                        key={player.address || player.player || index}
                         className={cn(
                           "transition-colors",
                           isCurrentPlayer && "bg-amber-100 font-bold",
@@ -490,7 +575,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         </td>
                         <td className="px-4 py-3 text-amber-900">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{formatAddress(player.player)}</span>
+                            <span className="font-mono text-sm">{formatAddress(player.address || player.player)}</span>
                             {isCurrentPlayer && (
                               <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">YOU</span>
                             )}
@@ -504,6 +589,22 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
+                        <td className="px-4 py-3 text-center">
+                          {player.rank <= 3 ? (
+                            <Button
+                              disabled={player.claimed}
+                              onClick={() => handleClaim(player.rank)}
+                              className={cn(
+                                "text-xs",
+                                player.claimed && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
                       </tr>
                     )
                   })}
