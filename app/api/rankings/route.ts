@@ -3,7 +3,7 @@ import { promises as fs } from "fs"
 import path from "path"
 import { getDayId } from "@/utils/day"
 import { ensureRankingsLoaded, getRankingsFromCache, addRankingToCache, replaceRankingsCache, type RankingEntry } from "@/lib/rankings-cache"
-import { supabase } from "@/lib/supabase"
+import { supabaseAdmin } from "@/lib/supabase"
 
 // File-based storage for persistence
 const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
@@ -31,38 +31,37 @@ async function saveRankings(rankings: RankingEntry[]): Promise<void> {
 // GET /api/rankings - Get daily ranking from Supabase
 export async function GET() {
   try {
-    // Validate Supabase configuration at runtime
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayEnd = new Date()
+    todayEnd.setHours(23, 59, 59, 999)
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('matches')
       .select('player, points, timestamp')
       .gte('timestamp', todayStart.toISOString())
-      .lte('timestamp', todayEnd.toISOString());
+      .lte('timestamp', todayEnd.toISOString())
 
-    if (error) throw error;
+    if (error) throw error
 
-    const rankingMap: Record<string, number> = {};
+    const rankingMap: Record<string, number> = {}
     data?.forEach(match => {
-      const player = match.player.toLowerCase();
-      rankingMap[player] = (rankingMap[player] || 0) + match.points;
-    });
+      const player = match.player.toLowerCase()
+      rankingMap[player] = (rankingMap[player] || 0) + match.points
+    })
 
     const ranking = Object.entries(rankingMap)
       .map(([player, totalPoints]) => ({ player, totalPoints }))
-      .sort((a, b) => b.totalPoints - a.totalPoints);
+      .sort((a, b) => b.totalPoints - a.totalPoints)
 
-    return NextResponse.json(ranking);
+    return NextResponse.json(ranking)
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: 'Erro ao gerar ranking' }, { status: 500 });
+    console.error(err)
+    return NextResponse.json({ error: 'Erro ao gerar ranking' }, { status: 500 })
   }
 }
 
