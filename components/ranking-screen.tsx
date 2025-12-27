@@ -87,11 +87,11 @@ type Player = {
 interface RankingEntry {
   rank: number
   address: string
-  points: number
+  score: number
   goldenMoles?: number
   errors?: number
+  canClaim?: boolean
   claimed?: boolean
-  day: number
 }
 
 const formatAddress = (address: string) => {
@@ -179,15 +179,22 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, topPlayers)
       
       // Map topPlayers to RankingEntry format
-      const rankingData: RankingEntry[] = topPlayers.map((row: any, index: number) => ({
-        rank: index + 1,
-        address: row.player,
-        points: row.points,
-        goldenMoles: row.golden_moles || 0,
-        errors: row.errors || 0,
-        day: selectedDay,
-        claimed: false // will be updated from prizes_claimed if needed
-      }))
+      const todayDay = Math.floor(new Date().getTime() / 86400000)
+      const rankingData: RankingEntry[] = topPlayers.map((row: any, index: number) => {
+        const rank = index + 1
+        const address = row.player
+        const canClaim = selectedDay < todayDay && rank <= 3 && address.toLowerCase() === currentPlayer?.toLowerCase()
+        
+        return {
+          rank,
+          address,
+          score: row.score,
+          goldenMoles: row.golden_moles || 0,
+          errors: row.errors || 0,
+          canClaim,
+          claimed: false // will be updated from prizes_claimed if needed
+        }
+      })
       
       setRanking(rankingData)
       setDisplayDate(date)
@@ -203,35 +210,35 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [todayDayId, currentPlayer])
 
   // Handle prize claim
-  const handleClaim = useCallback(async (rank: number, day: number) => {
+  const handleClaim = useCallback(async (rank: number) => {
     if (!currentPlayer) {
       alert("Wallet not connected")
       return
     }
 
     try {
+      const dateObj = new Date(displayDate + 'T00:00:00Z')
+      const selectedDay = getDayId(dateObj)
+
       const res = await fetch("/api/claimPrize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ day, rank, player: currentPlayer })
+        body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
+        headers: { "Content-Type": "application/json" }
       })
 
       const data = await res.json()
 
-      if (data.error) {
-        alert(data.error)
-        return
-      }
+      if (data.error) return alert(data.error)
 
-      // Atualiza estado local
       setRanking(prev =>
-        prev.map(p => (p.rank === rank && p.day === day ? { ...p, claimed: true } : p))
+        prev.map(p =>
+          p.rank === rank ? { ...p, claimed: true } : p
+        )
       )
-    } catch (err) {
-      console.error("[RANKING-SCREEN] Error claiming prize:", err)
+    } catch {
       alert("Failed to claim prize")
     }
-  }, [currentPlayer])
+  }, [currentPlayer, displayDate])
 
   // ✅ CORREÇÃO: Removido useEffect que monitorava ranking - não é necessário e pode causar re-renders desnecessários
 
@@ -494,7 +501,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
                     return (
                       <tr
-                        key={player.rank + "-" + player.day}
+                        key={player.rank}
                         className={cn(
                           "transition-colors",
                           isCurrentPlayer && "bg-amber-100 font-bold",
@@ -522,7 +529,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.points.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-amber-900 font-bold">{player.score.toLocaleString()}</td>
                         <td className="px-4 py-3 text-center">
                           <span className="inline-flex items-center gap-1">
                             <Star className="w-4 h-4 text-yellow-600" />
@@ -531,25 +538,20 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         </td>
                         <td className="px-4 py-3 text-center text-red-600">{player.errors}</td>
                         <td className="px-4 py-3 text-center">
-                          {(() => {
-                            const todayDay = Math.floor(new Date().getTime() / 86400000) // numero do dia atual
-                            const canClaimDay = player.day < todayDay && player.rank <= 3
-
-                            return canClaimDay ? (
-                              <Button
-                                disabled={player.claimed}
-                                onClick={() => handleClaim(player.rank, player.day)}
-                                className={cn(
-                                  "text-xs",
-                                  player.claimed && "opacity-50 cursor-not-allowed"
-                                )}
-                              >
-                                {player.claimed ? "Prize already claimed" : "Claim Prize"}
-                              </Button>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )
-                          })()}
+                          {player.rank <= 3 ? (
+                            <Button
+                              disabled={!player.canClaim || player.claimed}
+                              onClick={() => handleClaim(player.rank)}
+                              className={cn(
+                                "text-xs",
+                                (!player.canClaim || player.claimed) && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                       </tr>
                     )

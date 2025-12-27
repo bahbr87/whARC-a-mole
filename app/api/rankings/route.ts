@@ -47,9 +47,9 @@ export async function GET(req: NextRequest) {
     // Fetch top 3 for that day
     const { data: topPlayers, error } = await supabaseAdmin
       .from("matches")
-      .select("player, points, golden_moles, errors")
+      .select("player, score, golden_moles, errors")
       .eq("day", day)
-      .order("points", { ascending: false })
+      .order("score", { ascending: false })
       .order("golden_moles", { ascending: false })
       .order("errors", { ascending: true })
       .limit(3)
