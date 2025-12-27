@@ -85,11 +85,10 @@ type Player = {
 
 // Type for ranking entry with claim status
 interface RankingEntry {
-  rank: number
   player: string
   points: number
-  golden_moles: number
-  errors: number
+  golden_moles?: number
+  errors?: number
   claimed?: boolean
 }
 
@@ -189,7 +188,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       // Map ranking data and add claimed status
       const enrichedRanking: RankingEntry[] = rankingData.map((row: any, index: number) => ({
-        rank: index + 1,
         player: row.player,
         points: row.points,
         golden_moles: row.golden_moles || 0,
@@ -231,7 +229,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       if (data.error) return alert(data.error)
 
-      setRanking(prev => prev.map(p => p.rank === rank ? { ...p, claimed: true } : p))
+      setRanking(prev => prev.map((p, i) => (i + 1 === rank ? { ...p, claimed: true } : p)))
     } catch {
       alert("Failed to claim prize")
     }
@@ -484,31 +482,39 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-200">
-                  {paginatedRankings.map((p: RankingEntry, i: number) => (
-                    <tr key={p.player}>
-                      <td>{i + 1}</td>
-                      <td>{formatAddress(p.player)}</td>
-                      <td>{p.points}</td>
-                      <td>{p.golden_moles}</td>
-                      <td>{p.errors}</td>
-                      <td>
-                        {i < 3 ? (
-                          <Button
-                            disabled={p.claimed}
-                            onClick={() => handleClaim(i + 1)}
-                            className={cn(
-                              "text-xs",
-                              p.claimed && "opacity-50 cursor-not-allowed"
-                            )}
-                          >
-                            {p.claimed ? "Prize already claimed" : "Claim Prize"}
-                          </Button>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {paginatedRankings.map((player: RankingEntry, index: number) => {
+                    const rank = index + 1
+                    const dateObj = new Date(displayDate + 'T00:00:00Z')
+                    const selectedDay = getDayId(dateObj)
+                    const todayDayId = Math.floor(Date.now() / 86400000)
+                    const canClaim = rank <= 3 && selectedDay < todayDayId
+
+                    return (
+                      <tr key={player.player}>
+                        <td>{rank}</td>
+                        <td>{formatAddress(player.player)}</td>
+                        <td>{player.points}</td>
+                        <td>{player.golden_moles ?? 0}</td>
+                        <td>{player.errors ?? 0}</td>
+                        <td>
+                          {canClaim ? (
+                            <Button
+                              disabled={player.claimed}
+                              onClick={() => handleClaim(rank)}
+                              className={cn(
+                                "text-xs",
+                                player.claimed && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

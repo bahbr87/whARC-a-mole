@@ -1,44 +1,15 @@
-import { NextRequest, NextResponse } from "next/server"
-import { promises as fs } from "fs"
-import path from "path"
-import { getDayId } from "@/utils/day"
-import { ensureRankingsLoaded, getRankingsFromCache, addRankingToCache, replaceRankingsCache, type RankingEntry } from "@/lib/rankings-cache"
 import { supabaseAdmin } from "@/lib/supabase"
-import { getContractInstance } from "@/lib/contract"
-
-// File-based storage for persistence
-const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
-
-// Save rankings to file
-// Note: In Vercel, filesystem is read-only except /tmp
-// This function will fail silently in read-only environments
-async function saveRankings(rankings: RankingEntry[]): Promise<void> {
-  try {
-    await fs.writeFile(RANKINGS_FILE, JSON.stringify(rankings, null, 2), "utf-8")
-  } catch (error: any) {
-    // In Vercel, filesystem is read-only, so this will fail
-    // Log warning but don't throw - allow the request to succeed
-    if (error.code === "EACCES" || error.code === "EROFS" || error.code === "ENOENT") {
-      console.warn("⚠️ Cannot save rankings file (read-only filesystem in Vercel):", error.message)
-      // Don't throw - allow request to succeed even if file can't be written
-      return
-    }
-    console.error("Error saving rankings:", error)
-    // Only throw for unexpected errors
-    throw error
-  }
-}
 
 // GET /api/rankings - Get ranking for a day
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   try {
     const url = new URL(req.url)
-    const dayParam = url.searchParams.get('day')
+    const dayParam = url.searchParams.get("day")
     
-    if (!dayParam) return NextResponse.json({ error: "Missing day parameter" }, { status: 400 })
+    if (!dayParam) return new Response(JSON.stringify({ error: "Missing day parameter" }), { status: 400 })
 
     const day = parseInt(dayParam, 10)
-    if (isNaN(day)) return NextResponse.json({ error: "Invalid day parameter" }, { status: 400 })
+    if (isNaN(day)) return new Response(JSON.stringify({ error: "Invalid day parameter" }), { status: 400 })
 
     const { data, error } = await supabaseAdmin
       .from("matches")
@@ -48,12 +19,14 @@ export async function GET(req: NextRequest) {
       .order("golden_moles", { ascending: false })
       .order("errors", { ascending: true })
 
-    if (error) return NextResponse.json({ error: "Database error" }, { status: 500 })
-    return NextResponse.json({ ranking: data || [] }, { status: 200 })
+    if (error) return new Response(JSON.stringify({ error: "Database error" }), { status: 500 })
+
+    const ranking = data || []
+    return new Response(JSON.stringify({ ranking }), { status: 200 })
 
   } catch (err) {
     console.error(err)
-    return NextResponse.json({ error: "Unexpected error" }, { status: 500 })
+    return new Response(JSON.stringify({ error: "Unexpected error" }), { status: 500 })
   }
 }
 
