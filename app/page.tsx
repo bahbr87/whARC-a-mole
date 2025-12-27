@@ -437,7 +437,7 @@ function WharcAMoleContent() {
         <RankingScreen 
           currentPlayer={address}
           onBack={handleBackToGame}
-          playerRankings={rankings}
+          playerRankings={[]}
           onViewDailyResults={handleViewDailyResults}
           selectedDate={selectedDate.toISOString().split('T')[0]}
         />

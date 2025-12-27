@@ -65,7 +65,7 @@ const playClickSound = () => {
 interface ResultsScreenProps {
   sessionData: GameSession
   onPlayAgain: () => void
-  onViewRanking: () => void
+  onViewRanking: (day?: number) => void
 }
 
 export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: ResultsScreenProps) {
@@ -124,7 +124,8 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
             <Button
               onClick={() => {
                 playClickSound()
-                onViewRanking()
+                const today = Math.floor(Date.now() / 86400000)
+                onViewRanking(today) // envia o dia correto para o ranking
               }}
               size="lg"
               variant="outline"

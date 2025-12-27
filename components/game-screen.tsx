@@ -230,7 +230,7 @@ interface GameScreenProps {
   difficulty: GameDifficulty
   onDifficultyChange: (difficulty: GameDifficulty) => void
   onGameComplete: (data: GameSession) => void
-  onViewRanking: () => void
+  onViewRanking: (day?: number) => void
   onDisconnect: () => void
 }
 
@@ -619,20 +619,16 @@ export function GameScreen({
               <Button
                 onClick={async () => {
                   playClickSound()
-                  await refreshCredits()
-                  const balance = await getCreditsBalance()
-                  if (balance === 0 && credits === 0) {
-                    setShowCreditsDialog(true)
-                  } else {
-                    setShowCreditsDialog(true)
-                  }
+                  await refreshCredits()   // Atualiza estado interno do hook
+                  const balance = await getCreditsBalance() // Pega valor mais confiável direto do contrato
+                  setShowCreditsDialog(balance < 1) // Mostra diálogo se não tiver créditos
                 }}
                 variant="outline"
                 className="flex items-center gap-2 px-4 py-2 border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-white"
               >
                 <Coins className="w-5 h-5" />
                 <span className="font-bold">Insert Credits</span>
-                <span className="ml-1 text-sm font-mono" key={`credits-${credits}`}>
+                <span className="ml-1 text-sm font-mono">
                   ({typeof credits === 'number' && !isNaN(credits) ? credits.toLocaleString() : 0})
                 </span>
                 {pendingClicks > 0 && (
@@ -853,7 +849,8 @@ export function GameScreen({
             <Button
               onClick={() => {
                 playClickSound()
-                onViewRanking()
+                const today = Math.floor(Date.now() / 86400000)
+                onViewRanking(today) // envia o dia correto para o ranking
               }}
               variant="outline"
               className="border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-transparent"
