@@ -1,31 +1,45 @@
 import { supabaseAdmin } from "@/lib/supabase"
+import { getContractInstance } from "@/lib/contract"
 
-// GET /api/rankings - Get ranking for a day
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url)
     const dayParam = url.searchParams.get("day")
-    
-    if (!dayParam) return new Response(JSON.stringify({ error: "Missing day parameter" }), { status: 400 })
+
+    if (!dayParam) {
+      return new Response(JSON.stringify({ error: "Missing day parameter" }), { status: 400 })
+    }
 
     const day = parseInt(dayParam, 10)
-    if (isNaN(day)) return new Response(JSON.stringify({ error: "Invalid day parameter" }), { status: 400 })
+    if (isNaN(day)) {
+      return new Response(JSON.stringify({ error: "Invalid day parameter" }), { status: 400 })
+    }
 
-    const { data, error } = await supabaseAdmin
+    // Buscar todos os matches do dia
+    const { data: matches, error } = await supabaseAdmin
       .from("matches")
-      .select("player, points, golden_moles, errors")
+      .select("player, points, golden_moles, errors, timestamp, day")
       .eq("day", day)
       .order("points", { ascending: false })
       .order("golden_moles", { ascending: false })
       .order("errors", { ascending: true })
 
-    if (error) return new Response(JSON.stringify({ error: "Database error" }), { status: 500 })
+    if (error) {
+      console.error("[RANKINGS] Error fetching matches:", error)
+      return new Response(JSON.stringify({ error: "Database error" }), { status: 500 })
+    }
 
-    const ranking = data || []
+    const ranking = matches?.map((m) => ({
+      player: m.player.toLowerCase(),
+      totalPoints: m.points,
+      totalGoldenMoles: m.golden_moles,
+      totalErrors: m.errors,
+      timestamp: m.timestamp,
+    })) || []
+
     return new Response(JSON.stringify({ ranking }), { status: 200 })
-
   } catch (err) {
-    console.error(err)
+    console.error("[RANKINGS] Unexpected error:", err)
     return new Response(JSON.stringify({ error: "Unexpected error" }), { status: 500 })
   }
 }

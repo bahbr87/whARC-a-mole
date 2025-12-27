@@ -84,12 +84,17 @@ type Player = {
 }
 
 // Type for ranking entry with claim status
-interface RankingEntry {
+type RankingEntry = {
   player: string
-  points: number
-  golden_moles?: number
-  errors?: number
-  claimed?: boolean
+  totalPoints: number
+  totalGoldenMoles: number
+  totalErrors: number
+  timestamp: string
+}
+
+type ClaimData = {
+  player: string
+  rank: number
 }
 
 const formatAddress = (address: string) => {
@@ -137,18 +142,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // AGORA: Usamos apenas 'ranking' como fonte única da verdade. Os valores derivados (paginatedRankings)
   // são calculados diretamente de 'ranking' quando necessário.
   const [ranking, setRanking] = useState<RankingEntry[]>([])
+  const [claims, setClaims] = useState<ClaimData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [todayDayId, setTodayDayId] = useState<number>(0)
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
-
-  // Calculate today's day ID
-  useEffect(() => {
-    const today = new Date()
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    setTodayDayId(Math.floor(startOfDay.getTime() / (1000 * 60 * 60 * 24)))
-  }, [])
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
@@ -172,32 +170,20 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         throw new Error(errorData.error || `HTTP ${res.status}`)
       }
       
-      const response = await res.json()
-      const rankingData = response.ranking || []
-      console.log(`✅ [RANKING-SCREEN] Response received for day ${selectedDay}:`, rankingData)
+      const resRanking = await fetch(`/api/rankings?day=${selectedDay}`)
+      if (!resRanking.ok) throw new Error("Failed to fetch rankings")
       
-      // Load claims for this day
-      const claimsRes = await fetch(`/api/claimPrize?day=${selectedDay}`)
-      const claimsData = await claimsRes.json()
-      const claimsMap = new Map<string, boolean>()
-      if (claimsData.claims) {
-        claimsData.claims.forEach((c: { player: string; rank: number }) => {
-          claimsMap.set(`${c.rank}-${c.player.toLowerCase()}`, true)
-        })
-      }
+      const rankingJson = await resRanking.json()
+      setRanking(rankingJson.ranking || [])
+
+      const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
+      if (!resClaims.ok) throw new Error("Failed to fetch claims")
       
-      // Map ranking data and add claimed status
-      const enrichedRanking: RankingEntry[] = rankingData.map((row: any, index: number) => ({
-        player: row.player,
-        points: row.points,
-        golden_moles: row.golden_moles || 0,
-        errors: row.errors || 0,
-        claimed: claimsMap.has(`${index + 1}-${row.player.toLowerCase()}`) || false
-      }))
+      const claimsJson = await resClaims.json()
+      setClaims(claimsJson.claims || [])
       
-      setRanking(enrichedRanking)
       setDisplayDate(date)
-      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, enrichedRanking)
+      console.log(`✅ [RANKING-SCREEN] Ranking loaded:`, rankingJson.ranking)
     } catch (err) {
       console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
@@ -206,7 +192,17 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
     }
-  }, [todayDayId, currentPlayer])
+  }, [currentPlayer])
+
+  // Function to check if a player can claim
+  const canClaim = useCallback((player: string, rank: number) => {
+    const dateObj = new Date(displayDate + 'T00:00:00Z')
+    const selectedDay = getDayId(dateObj)
+    const isTop3 = rank <= 3
+    const alreadyClaimed = claims.some((c) => c.rank === rank && c.player.toLowerCase() === player.toLowerCase())
+    const isPastDay = selectedDay < Math.floor(Date.now() / 86400000)
+    return isTop3 && !alreadyClaimed && isPastDay
+  }, [claims, displayDate])
 
   // Handle prize claim
   const handleClaim = useCallback(async (rank: number) => {
@@ -229,8 +225,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       if (data.error) return alert(data.error)
 
-      setRanking(prev => prev.map((p, i) => (i + 1 === rank ? { ...p, claimed: true } : p)))
-    } catch {
+      // Update claims state
+      setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
+    } catch (err) {
+      console.error(err)
       alert("Failed to claim prize")
     }
   }, [currentPlayer, displayDate])
@@ -482,31 +480,29 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-200">
-                  {paginatedRankings.map((player: RankingEntry, index: number) => {
+                  {paginatedRankings.map((entry: RankingEntry, index: number) => {
                     const rank = index + 1
-                    const dateObj = new Date(displayDate + 'T00:00:00Z')
-                    const selectedDay = getDayId(dateObj)
-                    const todayDayId = Math.floor(Date.now() / 86400000)
-                    const canClaim = rank <= 3 && selectedDay < todayDayId
+                    const isClaimed = claims.some((c) => c.rank === rank && c.player.toLowerCase() === entry.player.toLowerCase())
+                    const canClaimThis = canClaim(entry.player, rank)
 
                     return (
-                      <tr key={player.player}>
+                      <tr key={entry.player}>
                         <td>{rank}</td>
-                        <td>{formatAddress(player.player)}</td>
-                        <td>{player.points}</td>
-                        <td>{player.golden_moles ?? 0}</td>
-                        <td>{player.errors ?? 0}</td>
+                        <td>{formatAddress(entry.player)}</td>
+                        <td>{entry.totalPoints}</td>
+                        <td>{entry.totalGoldenMoles ?? 0}</td>
+                        <td>{entry.totalErrors ?? 0}</td>
                         <td>
-                          {canClaim ? (
+                          {canClaimThis ? (
                             <Button
-                              disabled={player.claimed}
+                              disabled={isClaimed}
                               onClick={() => handleClaim(rank)}
                               className={cn(
                                 "text-xs",
-                                player.claimed && "opacity-50 cursor-not-allowed"
+                                isClaimed && "opacity-50 cursor-not-allowed"
                               )}
                             >
-                              {player.claimed ? "Prize already claimed" : "Claim Prize"}
+                              {isClaimed ? "Prize already claimed" : "Claim Prize"}
                             </Button>
                           ) : (
                             <span className="text-gray-400">-</span>
