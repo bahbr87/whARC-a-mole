@@ -165,8 +165,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
           console.log(`✅ [RANKING-SCREEN] First player has 'totalPoints' key:`, 'totalPoints' in data.players[0])
         }
         
-        setRanking(data.players)
-        console.log(`✅ [RANKING-SCREEN] setRanking called with ${data.players.length} players`)
+        // Create a new array to ensure React detects the change
+        const newRanking = [...data.players]
+        console.log(`✅ [RANKING-SCREEN] Creating new ranking array with ${newRanking.length} players`)
+        console.log(`✅ [RANKING-SCREEN] New ranking array:`, JSON.stringify(newRanking, null, 2))
+        setRanking(newRanking)
+        console.log(`✅ [RANKING-SCREEN] setRanking called with ${newRanking.length} players`)
         
         // Update display date if provided by API
         if (data.date && data.date !== date) {
@@ -201,7 +205,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   useEffect(() => {
     console.log(`📊 [RANKING-SCREEN] Ranking state changed - length: ${ranking.length}`)
     if (ranking.length > 0) {
-      console.log(`📊 [RANKING-SCREEN] Ranking data:`, ranking)
+      console.log(`📊 [RANKING-SCREEN] Ranking data:`, JSON.stringify(ranking, null, 2))
+      console.log(`📊 [RANKING-SCREEN] First ranking entry:`, ranking[0])
+      console.log(`📊 [RANKING-SCREEN] First entry type:`, typeof ranking[0])
+      console.log(`📊 [RANKING-SCREEN] First entry keys:`, ranking[0] ? Object.keys(ranking[0]) : 'null')
+    } else {
+      console.log(`📊 [RANKING-SCREEN] Ranking is empty array`)
     }
   }, [ranking])
 
@@ -448,6 +457,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
             ) : ranking.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-600">No players found for this day.</p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Debug: ranking.length = {ranking.length}, rankings.length = {rankings.length}, loading = {String(loading)}, error = {error || 'null'}
+                </p>
               </div>
             ) : (
               <table className="w-full">
