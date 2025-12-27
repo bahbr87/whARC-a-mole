@@ -129,14 +129,17 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
+    console.log(`🚀 [RANKING-SCREEN] loadRanking called with date: ${date}`)
     try {
       setLoading(true)
       setRanking([])
       setError(null)
+      console.log(`📅 [RANKING-SCREEN] State reset - loading: true, ranking: [], error: null`)
       
       const url = `/api/getDailyRanking?date=${date}`
       console.log(`📅 [RANKING-SCREEN] Fetching ranking for date: ${date}, URL: ${url}`)
       const res = await fetch(url)
+      console.log(`📅 [RANKING-SCREEN] Fetch response status: ${res.status}, ok: ${res.ok}`)
       
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
@@ -153,8 +156,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       // Handle new format: { date: "YYYY-MM-DD", players: [...] }
       if (data && typeof data === 'object' && 'players' in data && Array.isArray(data.players)) {
         console.log(`✅ [RANKING-SCREEN] Setting ranking with ${data.players.length} players`)
-        console.log(`✅ [RANKING-SCREEN] Players data:`, data.players)
+        console.log(`✅ [RANKING-SCREEN] Players data:`, JSON.stringify(data.players, null, 2))
+        
+        // Verify players array structure
+        if (data.players.length > 0) {
+          console.log(`✅ [RANKING-SCREEN] First player sample:`, data.players[0])
+          console.log(`✅ [RANKING-SCREEN] First player has 'player' key:`, 'player' in data.players[0])
+          console.log(`✅ [RANKING-SCREEN] First player has 'totalPoints' key:`, 'totalPoints' in data.players[0])
+        }
+        
         setRanking(data.players)
+        console.log(`✅ [RANKING-SCREEN] setRanking called with ${data.players.length} players`)
+        
         // Update display date if provided by API
         if (data.date && data.date !== date) {
           setDisplayDate(data.date)
@@ -174,10 +187,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         throw new Error('Invalid response format from API')
       }
     } catch (err) {
-      console.error("Erro ao carregar ranking:", err)
+      console.error("❌ [RANKING-SCREEN] Erro ao carregar ranking:", err)
       setError(err instanceof Error ? err.message : 'Erro ao buscar ranking')
       setRanking([])
+      setLoading(false) // Ensure loading is set to false even on error
     } finally {
+      console.log(`🏁 [RANKING-SCREEN] loadRanking finished - setting loading to false`)
       setLoading(false)
     }
   }, [])
@@ -200,24 +215,47 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     console.log(`   - today: ${today}`)
     console.log(`   - dateToLoad: ${dateToLoad}`)
     console.log(`   - current displayDate: ${displayDate}`)
+    console.log(`   - calling loadRanking with date: ${dateToLoad}`)
     
     setCurrentPage(1) // Reset page when date changes
     setDisplayDate(dateToLoad) // Update display date immediately
-    loadRanking(dateToLoad)
-  }, [selectedDate, loadRanking])
+    
+    // Call loadRanking and log the promise
+    loadRanking(dateToLoad).catch((err) => {
+      console.error(`❌ [RANKING-SCREEN] loadRanking promise rejected:`, err)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]) // Only depend on selectedDate to avoid infinite loops
 
   const rankings = useMemo(() => {
     console.log(`🔄 [RANKING-SCREEN] useMemo rankings - ranking.length: ${ranking.length}`)
     console.log(`🔄 [RANKING-SCREEN] ranking data:`, ranking)
+    
+    // Safety check: ensure ranking is an array
+    if (!Array.isArray(ranking)) {
+      console.error(`❌ [RANKING-SCREEN] ranking is not an array:`, typeof ranking, ranking)
+      return []
+    }
+    
     // Map the API response to the expected format
-    const mapped = ranking.map((entry, index) => ({
-      rank: index + 1,
-      player: entry.player,
-      score: entry.totalPoints,
-      goldenMoles: 0, // Not available from API
-      errors: 0, // Not available from API
-    }))
-    console.log(`🔄 [RANKING-SCREEN] mapped rankings:`, mapped)
+    const mapped = ranking
+      .map((entry, index) => {
+        // Safety check: ensure entry has required fields
+        if (!entry || typeof entry !== 'object' || !entry.player) {
+          console.error(`❌ [RANKING-SCREEN] Invalid entry at index ${index}:`, entry)
+          return null
+        }
+        return {
+          rank: index + 1,
+          player: entry.player,
+          score: entry.totalPoints || 0,
+          goldenMoles: 0, // Not available from API
+          errors: 0, // Not available from API
+        }
+      })
+      .filter((item): item is { rank: number; player: string; score: number; goldenMoles: number; errors: number } => item !== null)
+    
+    console.log(`🔄 [RANKING-SCREEN] mapped rankings (${mapped.length} valid entries):`, mapped)
     return mapped
   }, [ranking])
 
