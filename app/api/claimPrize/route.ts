@@ -45,19 +45,57 @@ export async function POST(req: Request) {
     // ANTES: Buscava apenas os primeiros 3 matches individuais (não agregados)
     // PROBLEMA: Se um jogador tinha múltiplas matches, podia não aparecer no top 3 correto
     // AGORA: Busca todas as matches, agrega por jogador, ordena e pega os top 3
-    const { data: allMatches, error } = await supabaseAdmin
+    // ✅ CORREÇÃO: Usar fallback por timestamp se não encontrar por day (mesma lógica do /api/rankings)
+    let allMatches: any[] = [];
+    
+    // Primeiro tenta buscar por day
+    const { data: dataByDay, error: errorByDay } = await supabaseAdmin
       .from("matches")
-      .select("player, points, golden_moles, errors")
+      .select("player, points, golden_moles, errors, day, timestamp")
       .eq("day", day);
 
-    if (error) {
-      console.error("[CLAIM] DB ranking error:", error);
-      return new Response(JSON.stringify({ error: "Database error" }), {
-        status: 500,
-      });
+    if (errorByDay) {
+      console.error("[CLAIM] DB error (by day):", errorByDay);
+    } else if (dataByDay && dataByDay.length > 0) {
+      allMatches = dataByDay;
+      console.log(`[CLAIM] Found ${allMatches.length} matches by day=${day}`);
+    } else {
+      // Fallback: buscar por timestamp (para dados antigos que não têm o campo day)
+      console.log(`[CLAIM] No matches found with day=${day}, trying fallback query by timestamp...`);
+      
+      const dayStartMs = day * 86400000;
+      const dayEndMs = (day + 1) * 86400000;
+      const dayStartISO = new Date(dayStartMs).toISOString();
+      const dayEndISO = new Date(dayEndMs).toISOString();
+      
+      const { data: dataByTimestamp, error: errorByTimestamp } = await supabaseAdmin
+        .from("matches")
+        .select("player, points, golden_moles, errors, day, timestamp")
+        .gte("timestamp", dayStartISO)
+        .lt("timestamp", dayEndISO);
+
+      if (errorByTimestamp) {
+        console.error("[CLAIM] DB error (by timestamp):", errorByTimestamp);
+        return new Response(JSON.stringify({ error: "Database error" }), {
+          status: 500,
+        });
+      } else if (dataByTimestamp && dataByTimestamp.length > 0) {
+        // Calcular day do timestamp e filtrar
+        const matchesWithDay = dataByTimestamp.map(match => {
+          const calculatedDay = Math.floor(new Date(match.timestamp).getTime() / 86400000);
+          return {
+            ...match,
+            day: calculatedDay
+          };
+        });
+        
+        allMatches = matchesWithDay.filter(m => m.day === day);
+        console.log(`[CLAIM] Found ${allMatches.length} matches by timestamp (filtered to day=${day})`);
+      }
     }
 
     if (!allMatches || allMatches.length === 0) {
+      console.error(`[CLAIM] No matches found for day ${day} (tried both day field and timestamp)`);
       return new Response(JSON.stringify({ error: "No matches found for this day" }), {
         status: 404,
       });
