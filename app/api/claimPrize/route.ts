@@ -154,7 +154,9 @@ export async function POST(req: Request) {
       );
     }
 
-    await supabaseAdmin.from("prizes_claimed").insert({
+    // ✅ CORREÇÃO: Registrar claim no banco ANTES de chamar o contrato
+    // Isso garante que mesmo se o contrato falhar, o claim está registrado
+    const { error: insertError } = await supabaseAdmin.from("prizes_claimed").insert({
       day,
       rank,
       player: player.toLowerCase(),
@@ -162,16 +164,24 @@ export async function POST(req: Request) {
       claimed_at: new Date().toISOString(),
     });
 
-    try {
-      const contract = getContractInstance();
-      if (contract) {
-        await contract.claimPrize(day, rank, player);
-      }
-    } catch (err) {
-      console.error("[CLAIM] Contract fail:", err);
+    if (insertError) {
+      console.error("[CLAIM] Error inserting claim:", insertError);
+      return new Response(JSON.stringify({ error: "Failed to register claim" }), {
+        status: 500,
+      });
     }
 
-    return new Response(JSON.stringify({ success: true }), { status: 200 });
+    console.log(`[CLAIM] Claim registered in database for day=${day}, rank=${rank}, player=${player}`);
+
+    // ✅ CORREÇÃO: NÃO chamar o contrato no backend
+    // O backend não pode chamar o contrato porque precisa da assinatura da wallet do usuário
+    // O frontend deve chamar o contrato diretamente após registrar no banco
+    // Retornar sucesso para que o frontend possa chamar o contrato
+    
+    return new Response(JSON.stringify({ 
+      success: true,
+      message: "Claim registered in database. Please call the contract from the frontend to transfer the prize."
+    }), { status: 200 });
   } catch (err) {
     console.error("[CLAIM] Unexpected:", err);
     return new Response(JSON.stringify({ error: "Unexpected error" }), {

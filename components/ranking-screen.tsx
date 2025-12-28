@@ -405,6 +405,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   }, [displayDate, currentPlayer, claimedRanks])
 
   // Handle prize claim
+  // ✅ CORREÇÃO: Fluxo completo de claim
+  // 1. Registrar no banco via API (validação de segurança)
+  // 2. Chamar contrato no frontend (transferência de USDC)
   const handleClaim = useCallback(async (rank: number) => {
     if (!currentPlayer) {
       alert("Wallet not connected")
@@ -419,12 +422,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       console.log(`[RANKING-SCREEN] Claiming prize: day=${selectedDay}, rank=${rank}, player=${currentPlayer}`)
       
-      console.log(`🔍 [RANKING-SCREEN] Sending claim request:`, {
-        day: selectedDay,
-        rank,
-        player: currentPlayer
-      })
-
+      // ✅ PASSO 1: Registrar no banco (validação de segurança)
+      console.log(`🔍 [RANKING-SCREEN] Step 1: Registering claim in database...`)
       const res = await fetch("/api/claimPrize", {
         method: "POST",
         body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
@@ -433,25 +432,79 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       const data = await res.json()
 
-      console.log(`🔍 [RANKING-SCREEN] Claim response:`, {
+      console.log(`🔍 [RANKING-SCREEN] Database registration response:`, {
         status: res.status,
         data
       })
 
       if (!res.ok || data.error) {
-        console.error(`🔍 [RANKING-SCREEN] Claim failed:`, data.error || 'Unknown error')
-        return alert(data.error || "Failed to claim prize")
+        console.error(`🔍 [RANKING-SCREEN] Database registration failed:`, data.error || 'Unknown error')
+        return alert(data.error || "Failed to register claim")
       }
 
+      console.log(`✅ [RANKING-SCREEN] Step 1 complete: Claim registered in database`)
+
+      // ✅ PASSO 2: Chamar contrato no frontend (transferência de USDC)
+      // O backend não pode chamar o contrato porque precisa da assinatura da wallet do usuário
+      // Por isso, chamamos o contrato diretamente no frontend
+      console.log(`🔍 [RANKING-SCREEN] Step 2: Calling contract to transfer prize...`)
+      
+      if (typeof window === "undefined" || !window.ethereum) {
+        alert("Wallet not connected. Please connect your wallet to claim the prize.")
+        return
+      }
+
+      // Usar a função onClaimPrize passada como prop (se disponível)
+      // Ou chamar o contrato diretamente aqui
+      const { BrowserProvider, Contract } = await import("ethers")
+      const provider = new BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+      
+      const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+      if (!PRIZE_POOL_ADDRESS) {
+        alert("Prize pool contract not configured. Please contact support.")
+        return
+      }
+
+      // ✅ Usar o mesmo ABI do app/page.tsx para garantir consistência
+      const PRIZE_POOL_ABI = [
+        "function claim(uint256 day) external",
+        "function getWinner(uint256 day, uint256 rank) view returns (address)",
+        "function winners(uint256 day, uint256 rank) view returns (address)",
+        "function claimed(uint256 day, address user) view returns (bool)",
+        "function canClaim(uint256 day, address user) view returns (bool)",
+        "function totalPlayers(uint256 day) view returns (uint256)",
+      ]
+
+      const writeContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, signer)
+      
+      // ✅ O contrato usa claim(day) que encontra o rank do usuário automaticamente
+      console.log(`🔍 [RANKING-SCREEN] Calling contract.claim(${selectedDay})...`)
+      const tx = await writeContract.claim(selectedDay)
+      console.log(`🔍 [RANKING-SCREEN] Transaction sent, waiting for confirmation... Hash: ${tx.hash}`)
+      
+      await tx.wait()
+      console.log(`✅ [RANKING-SCREEN] Step 2 complete: Transaction confirmed! Hash: ${tx.hash}`)
+
       // Update claims state
-      console.log(`🔍 [RANKING-SCREEN] Claim successful, updating state`)
+      console.log(`🔍 [RANKING-SCREEN] Updating UI state...`)
       setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
       setClaimedRanks(prev => [...prev, rank])
       
-      alert("Prize claimed successfully!")
-    } catch (err) {
-      console.error(err)
-      alert("Failed to claim prize")
+      // ✅ Mostrar hash da transação e link para verificar
+      const explorerUrl = `https://testnet.arcscan.app/tx/${tx.hash}`
+      alert(`Prize claimed successfully!\n\nTransaction Hash: ${tx.hash}\n\nView on ArcScan: ${explorerUrl}\n\nPlease check your wallet balance.`)
+    } catch (err: any) {
+      console.error(`[RANKING-SCREEN] Claim error:`, err)
+      
+      // Verificar se o usuário rejeitou a transação
+      if (err?.code === 4001 || err?.message?.includes("rejected") || err?.message?.includes("denied") || err?.message?.includes("User rejected")) {
+        alert("Transaction rejected by user. The claim is registered in the database, but the prize was not transferred.")
+        return
+      }
+      
+      // Se o erro foi na chamada do contrato, mas o registro no banco foi bem-sucedido
+      alert(`Claim registered in database, but contract call failed:\n${err?.message || err}\n\nPlease try again or contact support.`)
     }
   }, [currentPlayer, displayDate])
 
