@@ -140,6 +140,8 @@ export async function POST(req: Request) {
       });
     }
 
+    // ✅ CORREÇÃO: Verificar no banco E no contrato antes de bloquear
+    // Se o banco tem registro mas o contrato não confirma, permitir nova tentativa
     const { data: alreadyClaimed } = await supabaseAdmin
       .from("prizes_claimed")
       .select("*")
@@ -148,10 +150,83 @@ export async function POST(req: Request) {
       .eq("player", player.toLowerCase());
 
     if (alreadyClaimed && alreadyClaimed.length > 0) {
-      return new Response(
-        JSON.stringify({ error: "Prize already claimed" }),
-        { status: 400 }
-      );
+      console.log(`[CLAIM] Found claim record in database for day=${day}, rank=${rank}, player=${player}`);
+      
+      // ✅ CORREÇÃO: Verificar no contrato se realmente foi claimed
+      // Se o contrato não confirma, remover registro do banco e permitir nova tentativa
+      const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || process.env.PRIZE_POOL_CONTRACT_ADDRESS;
+      
+      if (!PRIZE_POOL_ADDRESS) {
+        console.warn(`[CLAIM] PRIZE_POOL_ADDRESS not configured. Cannot verify on contract. Using database record.`);
+        return new Response(
+          JSON.stringify({ error: "Prize already claimed" }),
+          { status: 400 }
+        );
+      }
+      
+      try {
+        const { JsonRpcProvider, Contract } = await import("ethers");
+        const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+        const provider = new JsonRpcProvider(RPC_URL);
+        
+        const PRIZE_POOL_ABI = [
+          "function claimed(uint256 day, address user) view returns (bool)",
+        ];
+        
+        console.log(`[CLAIM] Verifying claim on contract: PRIZE_POOL_ADDRESS=${PRIZE_POOL_ADDRESS}, day=${day}, player=${player.toLowerCase()}`);
+        
+        const contract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider);
+        const isClaimedOnChain = await contract.claimed(day, player.toLowerCase());
+        
+        console.log(`[CLAIM] Contract.claimed(${day}, ${player.toLowerCase()}) = ${isClaimedOnChain}`);
+        
+        if (isClaimedOnChain) {
+          // Contrato confirma que foi claimed - bloquear
+          console.log(`[CLAIM] Contract confirms claim. Blocking duplicate claim.`);
+          return new Response(
+            JSON.stringify({ error: "Prize already claimed" }),
+            { status: 400 }
+          );
+        } else {
+          // Contrato não confirma - remover registro do banco e permitir nova tentativa
+          console.log(`[CLAIM] Contract does NOT confirm claim. Removing stale database record and allowing retry.`);
+          
+          const { error: deleteError } = await supabaseAdmin
+            .from("prizes_claimed")
+            .delete()
+            .eq("day", day)
+            .eq("rank", rank)
+            .eq("player", player.toLowerCase());
+          
+          if (deleteError) {
+            console.error(`[CLAIM] Error removing stale claim record:`, deleteError);
+            // Ainda assim permitir nova tentativa
+          } else {
+            console.log(`[CLAIM] Stale claim record removed successfully. Allowing new claim attempt.`);
+          }
+          
+          // Continue com o fluxo normal (não retornar erro)
+        }
+      } catch (contractErr: any) {
+        // Se houver erro ao verificar no contrato, remover registro do banco e permitir nova tentativa
+        // É melhor permitir nova tentativa do que bloquear incorretamente
+        console.error(`[CLAIM] Error verifying claim on contract:`, contractErr);
+        console.log(`[CLAIM] Removing stale database record due to contract verification error. Allowing retry.`);
+        
+        try {
+          await supabaseAdmin
+            .from("prizes_claimed")
+            .delete()
+            .eq("day", day)
+            .eq("rank", rank)
+            .eq("player", player.toLowerCase());
+          console.log(`[CLAIM] Stale claim record removed after contract error. Allowing new claim attempt.`);
+        } catch (deleteErr) {
+          console.error(`[CLAIM] Error removing stale claim record:`, deleteErr);
+        }
+        
+        // Continue com o fluxo normal (não retornar erro) - permitir nova tentativa
+      }
     }
 
     // ✅ CORREÇÃO: Registrar claim no banco ANTES de chamar o contrato
