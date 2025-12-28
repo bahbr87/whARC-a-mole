@@ -296,6 +296,9 @@ export function GameScreen({
   const [showCreditsRequiredDialog, setShowCreditsRequiredDialog] = useState(false)
   const [gameSessionId, setGameSessionId] = useState<string>("")
   const { recordClick, isAuthorized, authorize, pendingClicks } = useMetaTransactions()
+  
+  // ✅ CORREÇÃO: Ref para rastrear se há transações pendentes
+  const pendingTransactionsRef = useRef<Set<string>>(new Set())
   const { credits, refreshCredits, getCreditsBalance } = useGameCredits(walletAddress)
   
   // ✅ CORREÇÃO: Refresh credits ONLY when walletAddress changes (no polling, no refresh contínuo)
@@ -575,16 +578,40 @@ export function GameScreen({
         // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar
         // Os créditos foram consumidos durante o jogo via meta-transactions
         // Precisamos atualizar o saldo exibido
+        // ✅ CORREÇÃO: Aguardar mais tempo para garantir que todas as transações foram processadas
         console.log("🔄 Refreshing credits after game completion...")
-        setTimeout(async () => {
+        console.log(`   Pending clicks in queue: ${pendingClicks}`)
+        
+        // Aguardar até que a fila esteja vazia + delay adicional
+        const checkAndRefresh = async () => {
+          let attempts = 0
+          const maxAttempts = 20 // 20 tentativas = 10 segundos
+          
+          while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+            attempts++
+            
+            // Verificar se ainda há cliques pendentes
+            if (pendingClicks === 0 && attempts > 5) {
+              console.log(`✅ Queue is empty after ${attempts * 0.5}s, refreshing credits...`)
+              break
+            }
+          }
+          
+          // Aguardar mais 3 segundos para garantir que todas as transações foram confirmadas
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          
           try {
+            console.log("🔄 Reading credits from contract...")
             await refreshCredits()
             const newBalance = await getCreditsBalance()
             console.log("✅ Credits refreshed after game. New balance:", newBalance)
           } catch (error) {
             console.error("❌ Error refreshing credits after game:", error)
           }
-        }, 2000) // Delay de 2s para garantir que a transação foi processada
+        }
+        
+        checkAndRefresh()
       }
     }, 1000)
 

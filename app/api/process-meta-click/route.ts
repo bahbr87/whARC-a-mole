@@ -33,10 +33,12 @@ function getProvider() {
 
 function getRelayer() {
   if (!_relayer) {
-    if (!RELAYER_PRIVATE_KEY) {
+    if (!RELAYER_PRIVATE_KEY || RELAYER_PRIVATE_KEY === "") {
+      console.error("[process-meta-click] ❌ RELAYER_PRIVATE_KEY not configured")
       throw new Error("RELAYER_PRIVATE_KEY not configured")
     }
     _relayer = new Wallet(RELAYER_PRIVATE_KEY, getProvider())
+    console.log(`[process-meta-click] ✅ Relayer initialized: ${_relayer.address}`)
   }
   return _relayer
 }
@@ -59,17 +61,23 @@ function queueTx<T>(fn: () => Promise<T>): Promise<T> {
 ========================= */
 
 const lastClickMap = new Map<string, number>()
-const MIN_INTERVAL_MS = 120 // ~8 clicks/sec max
+// ✅ CORREÇÃO: Remover rate limit - cada clique deve gerar uma transação imediatamente
+// A regra primordial é: CADA CLIQUE = UMA TRANSAÇÃO NA BLOCKCHAIN
+// Não podemos limitar a velocidade, pois isso violaria a regra
 
 function rateLimit(player: string) {
+  // ✅ CORREÇÃO: Apenas logar, não bloquear
+  // Cada clique deve ser processado imediatamente para gerar uma transação
   const now = Date.now()
   const last = lastClickMap.get(player) || 0
-
-  if (now - last < MIN_INTERVAL_MS) {
-    throw new Error("Rate limit exceeded")
+  const interval = now - last
+  
+  if (interval > 0) {
+    console.log(`[process-meta-click] Click interval: ${interval}ms`)
   }
-
+  
   lastClickMap.set(player, now)
+  // ✅ Não bloquear - processar imediatamente
 }
 
 /* =========================
@@ -107,15 +115,31 @@ export async function POST(req: NextRequest) {
 
     /* =========================
        AUTHORIZED FLOW (NO SIGN)
+       ✅ IMPORTANTE: Quando authorized=true, o relayer processa SEM solicitar confirmação
+       A autorização foi feita automaticamente ao comprar créditos
+       NÃO há popup ou confirmação - o relayer já está autorizado no contrato
     ========================= */
 
     if (authorized) {
       if (!GAME_CREDITS_ADDRESS || GAME_CREDITS_ADDRESS === ethers.ZeroAddress) {
+        console.error("[process-meta-click] ❌ GAME_CREDITS_ADDRESS not configured")
         return NextResponse.json(
           { error: "GameCredits not configured" },
           { status: 500 }
         )
       }
+
+      // ✅ CORREÇÃO: Verificar se o relayer está configurado
+      if (!RELAYER_PRIVATE_KEY || RELAYER_PRIVATE_KEY === "") {
+        console.error("[process-meta-click] ❌ RELAYER_PRIVATE_KEY not configured")
+        return NextResponse.json(
+          { error: "Relayer not configured" },
+          { status: 500 }
+        )
+      }
+
+      console.log(`[process-meta-click] ✅ Using relayer: ${relayer.address}`)
+      console.log(`[process-meta-click] ✅ GameCredits contract: ${GAME_CREDITS_ADDRESS}`)
 
       const creditsContract = new Contract(
         GAME_CREDITS_ADDRESS,
@@ -123,8 +147,32 @@ export async function POST(req: NextRequest) {
         relayer
       )
 
-      const balance = await creditsContract.credits(player)
-      if (balance < BigInt(clickCount)) {
+      // ✅ CORREÇÃO: Verificar se o relayer está autorizado
+      try {
+        const isAuthorized = await creditsContract.authorizedConsumers(relayer.address)
+        console.log(`[process-meta-click] Relayer authorized? ${isAuthorized}`)
+        
+        if (!isAuthorized) {
+          console.error(`[process-meta-click] ❌ Relayer ${relayer.address} is NOT authorized in GameCredits contract`)
+          return NextResponse.json(
+            { 
+              error: "Relayer not authorized",
+              details: `Relayer ${relayer.address} needs to be authorized in GameCredits contract`
+            },
+            { status: 403 }
+          )
+        }
+      } catch (authError: any) {
+        console.error(`[process-meta-click] ❌ Error checking authorization:`, authError.message)
+        // Continuar mesmo se houver erro na verificação (pode ser que o contrato não tenha essa função)
+      }
+
+      // ✅ CORREÇÃO: Ler saldo uma vez antes de entrar na fila
+      const balanceBefore = await creditsContract.credits(player)
+      console.log(`[process-meta-click] Player ${player} balance before: ${balanceBefore.toString()}`)
+      
+      if (balanceBefore < BigInt(clickCount)) {
+        console.error(`[process-meta-click] Insufficient credits: ${balanceBefore.toString()} < ${clickCount}`)
         return NextResponse.json(
           { error: "Insufficient credits" },
           { status: 400 }
@@ -135,7 +183,7 @@ export async function POST(req: NextRequest) {
         const nonceTx = await provider.getTransactionCount(relayer.address, "pending")
 
         console.log(`[process-meta-click] Consuming ${clickCount} credits for player ${player}`)
-        console.log(`[process-meta-click] Balance before: ${await creditsContract.credits(player)}`)
+        console.log(`[process-meta-click] Balance before (from queue): ${balanceBefore.toString()}`)
         
         const tx = await creditsContract.consumeCredits(player, clickCount, {
           nonce: nonceTx,
@@ -145,8 +193,25 @@ export async function POST(req: NextRequest) {
         const receipt = await tx.wait()
         
         console.log(`[process-meta-click] Transaction confirmed in block ${receipt.blockNumber}`)
-        console.log(`[process-meta-click] Balance after: ${await creditsContract.credits(player)}`)
+        
+        // ✅ CORREÇÃO: Verificar o saldo após a transação ser confirmada
+        // Aguardar um pouco para garantir que o estado foi atualizado
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const balanceAfter = await creditsContract.credits(player)
+        const expectedBalance = balanceBefore - BigInt(clickCount)
+        
+        console.log(`[process-meta-click] Balance after: ${balanceAfter.toString()}`)
+        console.log(`[process-meta-click] Expected balance: ${expectedBalance.toString()}`)
+        console.log(`[process-meta-click] Balance matches: ${balanceAfter.toString() === expectedBalance.toString()}`)
         console.log(`[process-meta-click] Gas used: ${receipt.gasUsed?.toString()}`)
+        
+        // ✅ CORREÇÃO: Verificar se os créditos foram realmente descontados
+        if (balanceAfter.toString() !== expectedBalance.toString()) {
+          console.error(`[process-meta-click] ⚠️ WARNING: Balance mismatch! Expected ${expectedBalance.toString()}, got ${balanceAfter.toString()}`)
+          console.error(`[process-meta-click] This indicates the transaction may not have consumed credits correctly`)
+        } else {
+          console.log(`[process-meta-click] ✅ Credits successfully consumed!`)
+        }
 
         return NextResponse.json({
           success: true,
