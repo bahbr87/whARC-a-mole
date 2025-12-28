@@ -269,7 +269,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         setClaimedRanks([])
       }
       
-      setDisplayDate(date)
+      // ✅ CORREÇÃO: Só atualizar displayDate se for diferente do atual
+      // Isso evita re-renders desnecessários e mantém sincronia
+      if (date !== displayDate) {
+        console.log(`🔍 [RANKING-SCREEN] Updating displayDate in loadRanking: ${displayDate} -> ${date}`)
+        setDisplayDate(date)
+      }
       console.log(`✅ [RANKING-SCREEN] Ranking loaded: ${data.ranking?.length || 0} players`)
     } catch (err: any) {
       console.error("[RANKING-SCREEN] Fetch error:", err)
@@ -427,11 +432,24 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       selectedDate && selectedDate.trim() !== "" ? selectedDate : today
 
     console.log(
-      "[RANKING-SCREEN] useEffect loading ranking for date:",
-      dateToLoad
+      "🔍 [RANKING-SCREEN] useEffect loading ranking for date:",
+      {
+        selectedDate,
+        dateToLoad,
+        currentDisplayDate: displayDate,
+        willUpdateDisplayDate: dateToLoad !== displayDate
+      }
     )
 
     setCurrentPage(1)
+
+    // ✅ CORREÇÃO: Atualizar displayDate quando selectedDate prop muda
+    // ANTES: Não atualizava displayDate, causando dessincronia
+    // AGORA: Atualiza displayDate para manter sincronizado com selectedDate prop
+    if (dateToLoad !== displayDate) {
+      console.log(`🔍 [RANKING-SCREEN] Updating displayDate from prop: ${displayDate} -> ${dateToLoad}`)
+      setDisplayDate(dateToLoad)
+    }
 
     // Não atualize displayDate aqui — o loadRanking já faz isso
     loadRanking(dateToLoad).catch((err) => {
@@ -687,20 +705,34 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     // AGORA: rank = (currentPage - 1) * itemsPerPage + index + 1 (rank global correto)
                     const rank = (currentPage - 1) * itemsPerPage + index + 1
 
-                    // 🔍 DIAGNÓSTICO: Log detalhado para cada linha
-                    const canClaimResult = canClaim(rank, row.player)
-                    console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}):`, {
+                    // 🔍 DIAGNÓSTICO: Log detalhado para cada linha ANTES de chamar canClaim
+                    const selectedDayFromDisplay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
+                    const todayDayFromDisplay = Math.floor(Date.now() / 86400000)
+                    const isPastDayFromDisplay = selectedDayFromDisplay !== null && selectedDayFromDisplay < todayDayFromDisplay
+                    
+                    console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}) - BEFORE canClaim:`, {
                       rowPlayer: row.player,
                       rowPlayerLower: row.player?.toLowerCase(),
                       currentPlayer: currentPlayer,
                       currentPlayerLower: currentPlayer?.toLowerCase(),
                       rank,
-                      canClaimResult,
-                      claimedRanks,
-                      isClaimed: claimedRanks.includes(rank),
                       displayDate,
-                      selectedDay: Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000),
-                      todayDay: Math.floor(Date.now() / 86400000)
+                      selectedDayFromDisplay,
+                      todayDayFromDisplay,
+                      isPastDayFromDisplay,
+                      claimedRanks,
+                      isClaimed: claimedRanks.includes(rank)
+                    })
+                    
+                    // 🔍 DIAGNÓSTICO: Chamar canClaim e logar resultado
+                    const canClaimResult = canClaim(rank, row.player)
+                    
+                    console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}) - AFTER canClaim:`, {
+                      canClaimResult,
+                      displayDate,
+                      selectedDayFromDisplay,
+                      todayDayFromDisplay,
+                      isPastDayFromDisplay
                     })
 
                     return (
