@@ -118,12 +118,30 @@ const getTodayDateString = () => {
 }
 
 export default function RankingScreen({ currentPlayer, onBack, playerRankings, onViewDailyResults, selectedDate }: RankingScreenProps) {
+  // 🔍 DIAGNÓSTICO: Log inicial dos props
+  console.log(`🔍 [RANKING-SCREEN] Component initialized with props:`, {
+    currentPlayer,
+    currentPlayerType: typeof currentPlayer,
+    currentPlayerLength: currentPlayer?.length,
+    selectedDate,
+    hasOnViewDailyResults: !!onViewDailyResults
+  })
+
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
   const [displayDate, setDisplayDate] = useState(() => selectedDate || getTodayDateString())
+  
+  // 🔍 DIAGNÓSTICO: Log quando currentPlayer muda
+  useEffect(() => {
+    console.log(`🔍 [RANKING-SCREEN] currentPlayer changed:`, {
+      currentPlayer,
+      currentPlayerLower: currentPlayer?.toLowerCase(),
+      isEmpty: !currentPlayer || currentPlayer.trim() === ''
+    })
+  }, [currentPlayer])
   
   // ✅ CORREÇÃO: Usar apenas um estado principal para armazenar os resultados
   // ANTES: Havia múltiplos estados (ranking, rankings via useMemo, paginatedRankings)
@@ -192,18 +210,52 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
 
       const data = await res.json()
-      console.log(`[RANKING-SCREEN] API response for day ${selectedDay}:`, data)
+      console.log(`🔍 [RANKING-SCREEN] API response for day ${selectedDay}:`, {
+        data,
+        rankingLength: data.ranking?.length || 0,
+        rankingType: Array.isArray(data.ranking) ? 'array' : typeof data.ranking,
+        firstPlayer: data.ranking?.[0] || null
+      })
+      
+      // 🔍 DIAGNÓSTICO: Validar estrutura dos dados
+      if (!data.ranking) {
+        console.error(`🔍 [RANKING-SCREEN] API response missing 'ranking' field:`, data)
+      } else if (!Array.isArray(data.ranking)) {
+        console.error(`🔍 [RANKING-SCREEN] API response 'ranking' is not an array:`, typeof data.ranking, data.ranking)
+      } else {
+        console.log(`🔍 [RANKING-SCREEN] Ranking data structure:`, {
+          length: data.ranking.length,
+          sample: data.ranking[0],
+          allPlayers: data.ranking.map((r: RankingEntry) => r.player)
+        })
+      }
+      
       setRanking(data.ranking || [])
 
       // Load claims
+      console.log(`🔍 [RANKING-SCREEN] Fetching claims for day ${selectedDay}`)
       const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
       if (resClaims.ok) {
         const claimsData = await resClaims.json()
-        console.log(`[RANKING-SCREEN] Claims loaded for day ${selectedDay}:`, claimsData)
+        console.log(`🔍 [RANKING-SCREEN] Claims loaded for day ${selectedDay}:`, {
+          claimsData,
+          claims: claimsData.claims || [],
+          claimsLength: claimsData.claims?.length || 0,
+          claimedRanks: (claimsData.claims || []).map((c: ClaimData) => c.rank)
+        })
         setClaims(claimsData.claims || [])
-        setClaimedRanks((claimsData.claims || []).map((c: ClaimData) => c.rank))
+        const ranks = (claimsData.claims || []).map((c: ClaimData) => c.rank)
+        console.log(`🔍 [RANKING-SCREEN] Setting claimedRanks:`, ranks)
+        setClaimedRanks(ranks)
       } else {
-        console.warn(`[RANKING-SCREEN] Failed to load claims for day ${selectedDay}`)
+        const errorText = await resClaims.text()
+        console.warn(`🔍 [RANKING-SCREEN] Failed to load claims for day ${selectedDay}:`, {
+          status: resClaims.status,
+          statusText: resClaims.statusText,
+          error: errorText
+        })
+        setClaims([])
+        setClaimedRanks([])
       }
       
       setDisplayDate(date)
@@ -222,30 +274,61 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // ANTES: Recebia index e verificava index < 3 (só funcionava para primeira página)
   // AGORA: Recebe rank e verifica rank <= 3 (funciona para qualquer página)
   const canClaim = useCallback((rank: number, rowPlayer: string) => {
+    // 🔍 DIAGNÓSTICO: Log inicial com todos os dados
+    console.log(`🔍 [RANKING-SCREEN] canClaim called:`, {
+      rank,
+      rowPlayer,
+      displayDate,
+      currentPlayer,
+      claimedRanks: [...claimedRanks]
+    })
+
     // Recalculate selectedDay and isPastDay from displayDate to ensure they're always current
+    if (!displayDate || typeof displayDate !== 'string') {
+      console.error(`🔍 [RANKING-SCREEN] canClaim: Invalid displayDate:`, displayDate)
+      return false
+    }
+
     const [year, month, day] = displayDate.split('-').map(Number)
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      console.error(`🔍 [RANKING-SCREEN] canClaim: Invalid date format:`, displayDate)
+      return false
+    }
+
     const dateObj = new Date(Date.UTC(year, month - 1, day))
     const selectedDay = Math.floor(dateObj.getTime() / 86400000)
     const todayDay = Math.floor(Date.now() / 86400000)
     const isPastDay = selectedDay < todayDay
     
-    const currentPlayerLower = currentPlayer?.toLowerCase() || ''
-    const rowPlayerLower = rowPlayer?.toLowerCase() || ''
+    const currentPlayerLower = (currentPlayer || '').toLowerCase().trim()
+    const rowPlayerLower = (rowPlayer || '').toLowerCase().trim()
     
     // ✅ CORREÇÃO: Comparar rowPlayerLower com currentPlayerLower (ambos já em lowercase)
     // ANTES: rowPlayerLower === currentPlayer?.toLowerCase() (redundante e pode falhar)
     // AGORA: rowPlayerLower === currentPlayerLower (comparação direta e correta)
     // ✅ CORREÇÃO: Verificar rank <= 3 em vez de index < 3
+    
+    // 🔍 DIAGNÓSTICO: Verificar cada condição separadamente
+    const checks = {
+      isPastDay,
+      hasCurrentPlayer: currentPlayerLower !== '',
+      hasRowPlayer: rowPlayerLower !== '',
+      playersMatch: rowPlayerLower === currentPlayerLower,
+      isTop3: rank <= 3,
+      notClaimed: !claimedRanks.includes(rank)
+    }
+
     const canClaimResult = (
-      isPastDay &&
-      currentPlayerLower !== '' &&
-      rowPlayerLower !== '' &&
-      rowPlayerLower === currentPlayerLower &&
-      rank <= 3 &&
-      !claimedRanks.includes(rank)
+      checks.isPastDay &&
+      checks.hasCurrentPlayer &&
+      checks.hasRowPlayer &&
+      checks.playersMatch &&
+      checks.isTop3 &&
+      checks.notClaimed
     )
     
-    console.log(`[RANKING-SCREEN] canClaim check:`, {
+    // 🔍 DIAGNÓSTICO: Log detalhado de cada verificação
+    console.log(`🔍 [RANKING-SCREEN] canClaim detailed check:`, {
       rank,
       rowPlayer: rowPlayer,
       rowPlayerLower: rowPlayerLower,
@@ -253,12 +336,24 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       currentPlayerLower: currentPlayerLower,
       selectedDay,
       todayDay,
-      isPastDay,
-      isTop3: rank <= 3,
-      notClaimed: !claimedRanks.includes(rank),
-      claimedRanks: claimedRanks,
-      canClaim: canClaimResult
+      isPastDay: checks.isPastDay,
+      checks: checks,
+      canClaim: canClaimResult,
+      displayDate,
+      claimedRanks: [...claimedRanks]
     })
+    
+    // 🔍 DIAGNÓSTICO: Log de falhas específicas
+    if (!canClaimResult) {
+      const failures = []
+      if (!checks.isPastDay) failures.push('Day is not in the past')
+      if (!checks.hasCurrentPlayer) failures.push('No current player')
+      if (!checks.hasRowPlayer) failures.push('No row player')
+      if (!checks.playersMatch) failures.push('Players do not match')
+      if (!checks.isTop3) failures.push('Not in top 3')
+      if (!checks.notClaimed) failures.push('Already claimed')
+      console.log(`🔍 [RANKING-SCREEN] canClaim FAILED. Reasons:`, failures)
+    }
     
     return canClaimResult
   }, [displayDate, currentPlayer, claimedRanks])
@@ -532,43 +627,65 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               // ANTES: Usava paginatedRankings que vinha de rankings (useMemo intermediário)
               // PROBLEMA: Se o useMemo intermediário falhasse, paginatedRankings ficava vazio
               // AGORA: paginatedRankings é calculado diretamente de ranking, garantindo que os dados fluam corretamente
-              <table className="w-full">
+              <table className="w-full table-auto border-collapse">
                 <thead className="bg-amber-600 text-white">
                   <tr>
-                    <th className="px-4 py-3 text-left font-bold">Rank</th>
-                    <th className="px-4 py-3 text-left font-bold">Player</th>
-                    <th className="px-4 py-3 text-right font-bold">Points</th>
-                    <th className="px-4 py-3 text-center font-bold">Golden</th>
-                    <th className="px-4 py-3 text-center font-bold">Errors</th>
-                    <th className="px-4 py-3 text-center font-bold">Prize</th>
+                    <th className="px-4 py-3 text-left font-bold min-w-[60px]">Rank</th>
+                    <th className="px-4 py-3 text-left font-bold min-w-[120px]">Player</th>
+                    <th className="px-4 py-3 text-right font-bold min-w-[80px]">Points</th>
+                    <th className="px-4 py-3 text-center font-bold min-w-[80px]">Golden</th>
+                    <th className="px-4 py-3 text-center font-bold min-w-[80px]">Errors</th>
+                    <th className="px-4 py-3 text-center font-bold min-w-[120px]">Prize</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-amber-200">
+                <tbody className="divide-y divide-amber-200 bg-white">
                   {paginatedRankings.map((row: RankingEntry, index: number) => {
                     // ✅ CORREÇÃO: Calcular o rank real baseado na página atual
                     // ANTES: rank = index + 1 (só funcionava para primeira página)
                     // AGORA: rank = (currentPage - 1) * itemsPerPage + index + 1 (rank global correto)
                     const rank = (currentPage - 1) * itemsPerPage + index + 1
 
+                    // 🔍 DIAGNÓSTICO: Log detalhado para cada linha
+                    const canClaimResult = canClaim(rank, row.player)
+                    console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}):`, {
+                      rowPlayer: row.player,
+                      rowPlayerLower: row.player?.toLowerCase(),
+                      currentPlayer: currentPlayer,
+                      currentPlayerLower: currentPlayer?.toLowerCase(),
+                      rank,
+                      canClaimResult,
+                      claimedRanks,
+                      isClaimed: claimedRanks.includes(rank),
+                      displayDate,
+                      selectedDay: Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000),
+                      todayDay: Math.floor(Date.now() / 86400000)
+                    })
+
                     return (
-                      <tr key={row.player}>
-                        <td>{rank}</td>
-                        <td>{formatAddress(row.player)}</td>
-                        <td>{row.points}</td>
-                        <td>{row.golden_moles ?? 0}</td>
-                        <td>{row.errors ?? 0}</td>
-                        <td>
+                      <tr key={`${row.player}-${rank}`} className="hover:bg-amber-50">
+                        <td className="px-4 py-3 text-left font-semibold">{rank}</td>
+                        <td className="px-4 py-3 text-left font-mono text-sm">{formatAddress(row.player)}</td>
+                        <td className="px-4 py-3 text-right font-semibold">{row.points}</td>
+                        <td className="px-4 py-3 text-center">{row.golden_moles ?? 0}</td>
+                        <td className="px-4 py-3 text-center">{row.errors ?? 0}</td>
+                        <td className="px-4 py-3 text-center">
                           {/* ✅ CORREÇÃO: Passar rank diretamente para canClaim (agora recebe rank, não index) */}
-                          {canClaim(rank, row.player) ? (
+                          {canClaimResult ? (
                             <Button
-                              onClick={() => handleClaim(rank)}
-                              className="text-xs"
+                              onClick={() => {
+                                console.log(`🔍 [RANKING-SCREEN] Claim button clicked for rank ${rank}`)
+                                handleClaim(rank)
+                              }}
+                              className="text-xs px-3 py-1"
+                              size="sm"
                             >
                               Claim prize
                             </Button>
                           ) : claimedRanks.includes(rank) ? (
-                            <span>Prize already claimed</span>
-                          ) : null}
+                            <span className="text-xs text-gray-500 italic">Prize already claimed</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
                         </td>
                       </tr>
                     )

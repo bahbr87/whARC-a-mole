@@ -405,7 +405,7 @@ function WharcAMoleContent() {
 
       {gameState === "ranking" && (
         <RankingScreen 
-          currentPlayer={address}
+          currentPlayer={address || walletAddress || ""}
           onBack={handleBackToGame}
           playerRankings={[]}
           onViewDailyResults={handleViewDailyResults}
