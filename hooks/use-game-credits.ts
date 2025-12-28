@@ -87,13 +87,27 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
       let balance: bigint
       try {
         balance = await contract.credits(playerAddress)
-        console.log("✅ Got balance from credits():", balance.toString(), "Number:", Number(balance))
+        const balanceNumber = Number(balance)
+        console.log("✅ Got balance from credits():", balance.toString(), "Number:", balanceNumber)
+        
+        // ✅ CORREÇÃO: Verificar se o valor está correto
+        if (balanceNumber < 0 || isNaN(balanceNumber)) {
+          console.error("❌ Invalid balance value:", balanceNumber)
+          return 0
+        }
       } catch (error: any) {
         console.log("⚠️ credits() failed, trying getCredits():", error.message)
         // Fallback to getCredits if credits() fails
         try {
           balance = await contract.getCredits(playerAddress)
-          console.log("✅ Got balance from getCredits():", balance.toString(), "Number:", Number(balance))
+          const balanceNumber = Number(balance)
+          console.log("✅ Got balance from getCredits():", balance.toString(), "Number:", balanceNumber)
+          
+          // ✅ CORREÇÃO: Verificar se o valor está correto
+          if (balanceNumber < 0 || isNaN(balanceNumber)) {
+            console.error("❌ Invalid balance value:", balanceNumber)
+            return 0
+          }
         } catch (error2: any) {
           console.error("❌ Both methods failed:", error2.message)
           return 0
@@ -401,34 +415,17 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     }
   }, [walletAddress, setupEventListeners])
 
-  // Effect: Refresh credits when walletAddress changes OR on mount
+  // Effect: Refresh credits ONLY when walletAddress changes (no polling)
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
-    
     // ✅ Use walletAddress directly (source of truth from GameScreen)
     if (walletAddress && walletAddress.trim() !== "") {
-      console.log("🔄 useEffect: walletAddress exists, refreshing credits immediately")
-      // Read balance from contract immediately
+      console.log("🔄 useEffect: walletAddress exists, refreshing credits once on mount/change")
+      // Read balance from contract immediately (only once, no polling)
       refreshCredits()
-      
-      // Poll every 2 seconds to keep in sync (backup to events)
-      // Reduzido para 2s para atualizar mais rapidamente após consumo
-      interval = setInterval(() => {
-        console.log("🔄 Polling credits from contract...")
-        refreshCredits()
-      }, 2000)
     } else {
       // No walletAddress - set to 0
       console.log("🔄 useEffect: No walletAddress available, setting credits to 0")
       setCredits(0)
-    }
-    
-    // Cleanup function
-    return () => {
-      if (interval) {
-        console.log("🧹 Cleaning up polling interval")
-        clearInterval(interval)
-      }
     }
   }, [walletAddress, refreshCredits])
 

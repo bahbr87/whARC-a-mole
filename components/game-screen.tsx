@@ -298,11 +298,11 @@ export function GameScreen({
   const { recordClick, isAuthorized, authorize, pendingClicks } = useMetaTransactions()
   const { credits, refreshCredits, getCreditsBalance } = useGameCredits(walletAddress)
   
-  // Force refresh credits when component mounts and wallet is connected
+  // ✅ CORREÇÃO: Refresh credits ONLY when walletAddress changes (no polling, no refresh contínuo)
   useEffect(() => {
     console.log("🎮 GameScreen useEffect triggered - walletAddress:", walletAddress, "current credits:", credits)
-    if (walletAddress) {
-      console.log("🔄 Forcing credits refresh on mount/update")
+    if (walletAddress && walletAddress.trim() !== "") {
+      console.log("🔄 Refreshing credits once on mount/wallet change")
       refreshCredits()
         .then(() => {
           console.log("✅ Credits refreshed on mount - new credits value should be visible")
@@ -313,12 +313,7 @@ export function GameScreen({
     } else {
       console.log("⚠️ No walletAddress, skipping credits refresh")
     }
-  }, [walletAddress, refreshCredits])
-  
-  // Force re-render when credits change
-  useEffect(() => {
-    console.log("💰 Credits state changed in GameScreen:", credits)
-  }, [credits])
+  }, [walletAddress]) // ✅ Removido refreshCredits das dependências para evitar refresh contínuo
 
   const getAnimalSpeed = useCallback(() => {
     // Increase speed progressively every 10 seconds
@@ -633,9 +628,8 @@ export function GameScreen({
               <Button
                 onClick={async () => {
                   playClickSound()
-                  await refreshCredits()   // Atualiza estado interno do hook
-                  const balance = await getCreditsBalance() // Pega valor mais confiável direto do contrato
-                  setShowCreditsDialog(balance < 1) // Mostra diálogo se não tiver créditos
+                  // ✅ CORREÇÃO: Sempre abre o diálogo quando clicar no botão
+                  setShowCreditsDialog(true)
                 }}
                 variant="outline"
                 className="flex items-center gap-2 px-4 py-2 border-2 border-amber-600 text-amber-900 hover:bg-amber-50 bg-white"
