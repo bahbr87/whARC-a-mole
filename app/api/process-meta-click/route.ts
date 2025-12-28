@@ -167,7 +167,8 @@ export async function POST(req: NextRequest) {
         // Continuar mesmo se houver erro na verificação (pode ser que o contrato não tenha essa função)
       }
 
-      // ✅ CORREÇÃO: Ler saldo uma vez antes de entrar na fila
+      // ✅ CORREÇÃO: Verificar saldo apenas uma vez antes de enviar a transação
+      // Não vamos verificar depois para evitar chamadas RPC extras
       const balanceBefore = await creditsContract.credits(player)
       console.log(`[process-meta-click] Player ${player} balance before: ${balanceBefore.toString()}`)
       
@@ -179,46 +180,29 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // ✅ CORREÇÃO: Usar queueTx apenas para segurança de nonce (evitar nonce duplicado)
+      // Não vamos esperar confirmação nem verificar saldo depois
       return await queueTx(async () => {
         const nonceTx = await provider.getTransactionCount(relayer.address, "pending")
 
         console.log(`[process-meta-click] Consuming ${clickCount} credits for player ${player}`)
-        console.log(`[process-meta-click] Balance before (from queue): ${balanceBefore.toString()}`)
         
+        // ✅ Enviar transação e retornar imediatamente (SEM esperar confirmação)
         const tx = await creditsContract.consumeCredits(player, clickCount, {
           nonce: nonceTx,
         })
 
         console.log(`[process-meta-click] Transaction sent: ${tx.hash}`)
-        const receipt = await tx.wait()
         
-        console.log(`[process-meta-click] Transaction confirmed in block ${receipt.blockNumber}`)
+        // ✅ CORREÇÃO: Retornar imediatamente após enviar a transação
+        // NÃO esperar confirmação (tx.wait()) para evitar rate-limit
+        // NÃO consultar saldo depois para evitar chamadas RPC extras
+        // A transação será confirmada na blockchain, mas não precisamos esperar aqui
         
-        // ✅ CORREÇÃO: Verificar o saldo após a transação ser confirmada
-        // Aguardar um pouco para garantir que o estado foi atualizado
-        await new Promise(resolve => setTimeout(resolve, 500))
-        const balanceAfter = await creditsContract.credits(player)
-        const expectedBalance = balanceBefore - BigInt(clickCount)
-        
-        console.log(`[process-meta-click] Balance after: ${balanceAfter.toString()}`)
-        console.log(`[process-meta-click] Expected balance: ${expectedBalance.toString()}`)
-        console.log(`[process-meta-click] Balance matches: ${balanceAfter.toString() === expectedBalance.toString()}`)
-        console.log(`[process-meta-click] Gas used: ${receipt.gasUsed?.toString()}`)
-        
-        // ✅ CORREÇÃO: Verificar se os créditos foram realmente descontados
-        if (balanceAfter.toString() !== expectedBalance.toString()) {
-          console.error(`[process-meta-click] ⚠️ WARNING: Balance mismatch! Expected ${expectedBalance.toString()}, got ${balanceAfter.toString()}`)
-          console.error(`[process-meta-click] This indicates the transaction may not have consumed credits correctly`)
-        } else {
-          console.log(`[process-meta-click] ✅ Credits successfully consumed!`)
-        }
-
         return NextResponse.json({
           success: true,
           transactionHash: tx.hash,
           clicksProcessed: clickCount,
-          blockNumber: receipt.blockNumber,
-          gasUsed: receipt.gasUsed?.toString(),
           method: "direct",
         })
       })
