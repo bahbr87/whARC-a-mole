@@ -41,14 +41,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: topPlayers, error } = await supabaseAdmin
+    // ✅ CORREÇÃO: Buscar TODAS as matches do dia e agregar por jogador
+    // ANTES: Buscava apenas os primeiros 3 matches individuais (não agregados)
+    // PROBLEMA: Se um jogador tinha múltiplas matches, podia não aparecer no top 3 correto
+    // AGORA: Busca todas as matches, agrega por jogador, ordena e pega os top 3
+    const { data: allMatches, error } = await supabaseAdmin
       .from("matches")
       .select("player, points, golden_moles, errors")
-      .eq("day", day)
-      .order("points", { ascending: false })
-      .order("golden_moles", { ascending: false })
-      .order("errors", { ascending: true })
-      .limit(3);
+      .eq("day", day);
 
     if (error) {
       console.error("[CLAIM] DB ranking error:", error);
@@ -57,7 +57,44 @@ export async function POST(req: Request) {
       });
     }
 
-    const winner = topPlayers?.[rank - 1]?.player?.toLowerCase();
+    if (!allMatches || allMatches.length === 0) {
+      return new Response(JSON.stringify({ error: "No matches found for this day" }), {
+        status: 404,
+      });
+    }
+
+    // Agregar por jogador (case-insensitive)
+    const playerMap = new Map<string, { player: string; points: number; golden_moles: number; errors: number }>();
+    
+    allMatches.forEach((match: any) => {
+      const playerLower = (match.player || '').toLowerCase().trim();
+      if (!playerLower) return;
+      
+      if (playerMap.has(playerLower)) {
+        const existing = playerMap.get(playerLower)!;
+        existing.points += match.points || 0;
+        existing.golden_moles += match.golden_moles || 0;
+        existing.errors += match.errors || 0;
+      } else {
+        playerMap.set(playerLower, {
+          player: match.player, // Manter o endereço original
+          points: match.points || 0,
+          golden_moles: match.golden_moles || 0,
+          errors: match.errors || 0
+        });
+      }
+    });
+    
+    // Converter para array e ordenar (mesma lógica do endpoint de rankings)
+    const topPlayers = Array.from(playerMap.values()).sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.golden_moles !== a.golden_moles) return b.golden_moles - a.golden_moles;
+      return a.errors - b.errors;
+    });
+
+    console.log(`[CLAIM] Top players for day ${day}:`, topPlayers.slice(0, 3).map((p, i) => ({ rank: i + 1, player: p.player, points: p.points })));
+
+    const winner = topPlayers[rank - 1]?.player?.toLowerCase();
 
     if (!winner || winner !== player.toLowerCase()) {
       return new Response(JSON.stringify({ error: "Not authorized" }), {

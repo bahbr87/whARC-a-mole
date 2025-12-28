@@ -419,6 +419,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       console.log(`[RANKING-SCREEN] Claiming prize: day=${selectedDay}, rank=${rank}, player=${currentPlayer}`)
       
+      console.log(`🔍 [RANKING-SCREEN] Sending claim request:`, {
+        day: selectedDay,
+        rank,
+        player: currentPlayer
+      })
+
       const res = await fetch("/api/claimPrize", {
         method: "POST",
         body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
@@ -427,11 +433,22 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
       const data = await res.json()
 
-      if (data.error) return alert(data.error)
+      console.log(`🔍 [RANKING-SCREEN] Claim response:`, {
+        status: res.status,
+        data
+      })
+
+      if (!res.ok || data.error) {
+        console.error(`🔍 [RANKING-SCREEN] Claim failed:`, data.error || 'Unknown error')
+        return alert(data.error || "Failed to claim prize")
+      }
 
       // Update claims state
+      console.log(`🔍 [RANKING-SCREEN] Claim successful, updating state`)
       setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
       setClaimedRanks(prev => [...prev, rank])
+      
+      alert("Prize claimed successfully!")
     } catch (err) {
       console.error(err)
       alert("Failed to claim prize")
@@ -711,31 +728,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               // ANTES: Usava paginatedRankings que vinha de rankings (useMemo intermediário)
               // PROBLEMA: Se o useMemo intermediário falhasse, paginatedRankings ficava vazio
               // AGORA: paginatedRankings é calculado diretamente de ranking, garantindo que os dados fluam corretamente
-              (() => {
-                console.log(`🔍 [RANKING-SCREEN] Rendering table with:`, {
-                  rankingLength: ranking.length,
-                  paginatedRankingsLength: paginatedRankings.length,
-                  displayDate,
-                  currentPage,
-                  itemsPerPage,
-                  loading,
-                  error,
-                  willRenderTable: true
-                })
-                return null
-              })(),
-              <table className="w-full table-auto border-collapse">
+              <table className="w-full">
                 <thead className="bg-amber-600 text-white">
                   <tr>
-                    <th className="px-4 py-3 text-left font-bold min-w-[60px]">Rank</th>
-                    <th className="px-4 py-3 text-left font-bold min-w-[120px]">Player</th>
-                    <th className="px-4 py-3 text-right font-bold min-w-[80px]">Points</th>
-                    <th className="px-4 py-3 text-center font-bold min-w-[80px]">Golden</th>
-                    <th className="px-4 py-3 text-center font-bold min-w-[80px]">Errors</th>
-                    <th className="px-4 py-3 text-center font-bold min-w-[120px]">Prize</th>
+                    <th className="px-4 py-3 text-left font-bold">Rank</th>
+                    <th className="px-4 py-3 text-left font-bold">Player</th>
+                    <th className="px-4 py-3 text-right font-bold">Points</th>
+                    <th className="px-4 py-3 text-center font-bold">Golden</th>
+                    <th className="px-4 py-3 text-center font-bold">Errors</th>
+                    <th className="px-4 py-3 text-center font-bold">Prize</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-amber-200 bg-white">
+                <tbody className="divide-y divide-amber-200">
                   {paginatedRankings.map((row: RankingEntry, index: number) => {
                     // ✅ CORREÇÃO: Calcular o rank real baseado na página atual
                     // ANTES: rank = index + 1 (só funcionava para primeira página)
@@ -773,10 +777,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     })
 
                     return (
-                      <tr key={`${row.player}-${rank}`} className="hover:bg-amber-50">
-                        <td className="px-4 py-3 text-left font-semibold">{rank}</td>
-                        <td className="px-4 py-3 text-left font-mono text-sm">{formatAddress(row.player)}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{row.points}</td>
+                      <tr key={`${row.player}-${rank}`}>
+                        <td className="px-4 py-3">{rank}</td>
+                        <td className="px-4 py-3">{formatAddress(row.player)}</td>
+                        <td className="px-4 py-3 text-right">{row.points}</td>
                         <td className="px-4 py-3 text-center">{row.golden_moles ?? 0}</td>
                         <td className="px-4 py-3 text-center">{row.errors ?? 0}</td>
                         <td className="px-4 py-3 text-center">
@@ -787,16 +791,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                                 console.log(`🔍 [RANKING-SCREEN] Claim button clicked for rank ${rank}`)
                                 handleClaim(rank)
                               }}
-                              className="text-xs px-3 py-1"
-                              size="sm"
+                              className="text-xs"
                             >
                               Claim prize
                             </Button>
                           ) : claimedRanks.includes(rank) ? (
-                            <span className="text-xs text-gray-500 italic">Prize already claimed</span>
-                          ) : (
-                            <span className="text-xs text-gray-400">-</span>
-                          )}
+                            <span>Prize already claimed</span>
+                          ) : null}
                         </td>
                       </tr>
                     )
