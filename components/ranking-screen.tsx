@@ -142,6 +142,17 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       isEmpty: !currentPlayer || currentPlayer.trim() === ''
     })
   }, [currentPlayer])
+
+  // 🔍 DIAGNÓSTICO: Log quando displayDate muda
+  useEffect(() => {
+    console.log(`🔍 [RANKING-SCREEN] displayDate changed:`, {
+      displayDate,
+      selectedDate,
+      calculatedDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null,
+      todayDay: Math.floor(Date.now() / 86400000),
+      isPastDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) < Math.floor(Date.now() / 86400000) : false
+    })
+  }, [displayDate, selectedDate])
   
   // ✅ CORREÇÃO: Usar apenas um estado principal para armazenar os resultados
   // ANTES: Havia múltiplos estados (ranking, rankings via useMemo, paginatedRankings)
@@ -280,7 +291,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       rowPlayer,
       displayDate,
       currentPlayer,
-      claimedRanks: [...claimedRanks]
+      claimedRanks: [...claimedRanks],
+      timestamp: new Date().toISOString()
     })
 
     // Recalculate selectedDay and isPastDay from displayDate to ensure they're always current
@@ -299,6 +311,20 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     const selectedDay = Math.floor(dateObj.getTime() / 86400000)
     const todayDay = Math.floor(Date.now() / 86400000)
     const isPastDay = selectedDay < todayDay
+    
+    // 🔍 DIAGNÓSTICO: Log crítico do cálculo do dia
+    console.log(`🔍 [RANKING-SCREEN] canClaim day calculation:`, {
+      displayDate,
+      dateObj: dateObj.toISOString(),
+      selectedDay,
+      todayDay,
+      isPastDay,
+      difference: todayDay - selectedDay,
+      dateObjTime: dateObj.getTime(),
+      todayTime: Date.now(),
+      calculation: `Math.floor(${dateObj.getTime()} / 86400000) = ${selectedDay}`,
+      todayCalculation: `Math.floor(${Date.now()} / 86400000) = ${todayDay}`
+    })
     
     const currentPlayerLower = (currentPlayer || '').toLowerCase().trim()
     const rowPlayerLower = (rowPlayer || '').toLowerCase().trim()
@@ -445,7 +471,21 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const day = String(date.getUTCDate()).padStart(2, '0')
       const dateString = `${year}-${month}-${day}`
       
-      console.log(`📅 [RANKING-SCREEN] Calendar date selected: ${dateString}`)
+      // 🔍 DIAGNÓSTICO: Calcular day ID antes de atualizar
+      const dateObj = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate()))
+      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+      const todayDay = Math.floor(Date.now() / 86400000)
+      const isPastDay = selectedDay < todayDay
+      
+      console.log(`📅 [RANKING-SCREEN] Calendar date selected:`, {
+        dateString,
+        dateObj: dateObj.toISOString(),
+        selectedDay,
+        todayDay,
+        isPastDay,
+        oldDisplayDate: displayDate,
+        willUpdateDisplayDate: true
+      })
       
       setCurrentPage(1) // Reset to first page when changing date
       setDisplayDate(dateString) // Update display date immediately
@@ -453,11 +493,13 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       setCalendarSelectedDate(undefined)
       
       // Load ranking immediately for the selected date
+      console.log(`📅 [RANKING-SCREEN] Calling loadRanking with: ${dateString}`)
       loadRanking(dateString)
       
       // If onViewDailyResults is provided, call it with the UTC date
       if (onViewDailyResults) {
         const utcDate = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0))
+        console.log(`📅 [RANKING-SCREEN] Calling onViewDailyResults with:`, utcDate.toISOString())
         onViewDailyResults(utcDate)
       }
     }
