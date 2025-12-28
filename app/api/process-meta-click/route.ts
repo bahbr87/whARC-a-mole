@@ -134,11 +134,19 @@ export async function POST(req: NextRequest) {
       return await queueTx(async () => {
         const nonceTx = await provider.getTransactionCount(relayer.address, "pending")
 
+        console.log(`[process-meta-click] Consuming ${clickCount} credits for player ${player}`)
+        console.log(`[process-meta-click] Balance before: ${await creditsContract.credits(player)}`)
+        
         const tx = await creditsContract.consumeCredits(player, clickCount, {
           nonce: nonceTx,
         })
 
+        console.log(`[process-meta-click] Transaction sent: ${tx.hash}`)
         const receipt = await tx.wait()
+        
+        console.log(`[process-meta-click] Transaction confirmed in block ${receipt.blockNumber}`)
+        console.log(`[process-meta-click] Balance after: ${await creditsContract.credits(player)}`)
+        console.log(`[process-meta-click] Gas used: ${receipt.gasUsed?.toString()}`)
 
         return NextResponse.json({
           success: true,

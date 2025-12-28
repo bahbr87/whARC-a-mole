@@ -92,9 +92,13 @@ export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: Cre
     setError(null)
     try {
       await purchaseCredits(creditAmount)
-      // Wait a bit for the transaction to be processed
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      // Refresh credits
+      // ✅ CORREÇÃO: O purchaseCredits já atualiza o estado, mas vamos garantir com um refresh adicional
+      // Aguardar um pouco mais para garantir que o contrato foi atualizado
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      // Refresh credits novamente para garantir que está sincronizado
+      await refreshCredits()
+      // Aguardar mais um pouco e fazer um último refresh
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await refreshCredits()
       // Close dialog only after successful purchase and refresh
       onOpenChange(false)

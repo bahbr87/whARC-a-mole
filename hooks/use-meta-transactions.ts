@@ -25,12 +25,20 @@ export function useMetaTransactions() {
     setPendingClicks(queueRef.current.length)
 
     try {
-      if (!address || !window.ethereum) return
+      if (!address || !window.ethereum) {
+        console.log("❌ [recordClick] No address or ethereum")
+        return
+      }
 
       const accounts = await window.ethereum.request({ method: "eth_accounts" })
-      if (!accounts || accounts.length === 0) return
+      if (!accounts || accounts.length === 0) {
+        console.log("❌ [recordClick] No accounts")
+        return
+      }
 
-      await fetch("/api/process-meta-click", {
+      console.log(`🖱️ [recordClick] Processing click for session ${sessionId}, player: ${accounts[0]}`)
+      
+      const response = await fetch("/api/process-meta-click", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -40,8 +48,20 @@ export function useMetaTransactions() {
           authorized: true,
         }),
       })
+
+      const data = await response.json()
+      
+      if (response.ok && data.success) {
+        console.log(`✅ [recordClick] Click processed successfully!`)
+        console.log(`   Transaction Hash: ${data.transactionHash}`)
+        console.log(`   Block: ${data.blockNumber}`)
+        console.log(`   Gas Used: ${data.gasUsed}`)
+        console.log(`   Method: ${data.method}`)
+      } else {
+        console.error(`❌ [recordClick] Click processing failed:`, data.error || data.message)
+      }
     } catch (err) {
-      console.error("❌ Click failed:", err)
+      console.error("❌ [recordClick] Click failed:", err)
     } finally {
       processingRef.current = false
     }

@@ -146,11 +146,20 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     
     console.log("🔄 refreshCredits: Balance from contract:", balance, "type:", typeof balance)
     
-    // ALWAYS update state, even if value is the same (forces re-render)
-    // ✅ Convert to number explicitly (guarantee type safety)
+    // ✅ CORREÇÃO: Sempre atualizar o estado, mesmo que o valor seja o mesmo
+    // Isso força um re-render e garante que a UI está sincronizada
     const creditsNumber = Number(balance)
     console.log("🔄 refreshCredits: Updating state to:", creditsNumber)
-    setCredits(creditsNumber)
+    
+    // ✅ CORREÇÃO: Usar função de atualização para garantir que o estado seja atualizado
+    setCredits(prevCredits => {
+      if (prevCredits !== creditsNumber) {
+        console.log("🔄 refreshCredits: State changed from", prevCredits, "to", creditsNumber)
+      } else {
+        console.log("🔄 refreshCredits: State unchanged, but forcing update")
+      }
+      return creditsNumber
+    })
     console.log("🔄 refreshCredits: State updated")
   }, [walletAddress, readCreditsFromContract])
 
@@ -301,11 +310,54 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
 
         // After tx.wait(), read balance DIRECTLY from contract (source of truth)
         // Don't rely on events or state - always read from contract
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Small delay for indexing
-        const newBalance = await readCreditsFromContract(currentAddress)
+        // ✅ CORREÇÃO: Aumentar delay e tentar múltiplas vezes para garantir que o contrato foi atualizado
+        console.log("⏳ Waiting for contract state to update...")
+        await new Promise(resolve => setTimeout(resolve, 2000)) // Aumentado para 2s
         
-        // ✅ Update UI with value from contract (convert to number explicitly)
-        setCredits(Number(newBalance))
+        // ✅ CORREÇÃO: Ler o saldo diretamente do contrato (fonte da verdade)
+        // Não confiar em eventos ou estado - sempre ler do contrato
+        let newBalance = await readCreditsFromContract(currentAddress)
+        let attempts = 0
+        const maxAttempts = 5
+        
+        // ✅ CORREÇÃO: Usar função de atualização do estado para obter o valor atual
+        let previousBalance = 0
+        setCredits(prev => {
+          previousBalance = prev
+          return prev
+        })
+        
+        const expectedCredits = previousBalance + amount // Saldo esperado após compra
+        
+        console.log(`🔄 Previous balance: ${previousBalance}, Amount purchased: ${amount}, Expected: ${expectedCredits}`)
+        console.log(`🔄 Attempt ${attempts + 1}: Current balance from contract: ${newBalance}`)
+        
+        // Se o saldo já está correto, não precisa tentar novamente
+        if (newBalance >= expectedCredits) {
+          console.log("✅ Balance updated correctly on first try!")
+        } else {
+          // Tentar novamente algumas vezes (pode ser que o contrato ainda não tenha atualizado)
+          while (attempts < maxAttempts && newBalance < expectedCredits) {
+            attempts++
+            console.log(`🔄 Attempt ${attempts + 1}: Current balance from contract: ${newBalance}, Expected: ${expectedCredits}`)
+            
+            // Aguardar mais um pouco e tentar novamente
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            newBalance = await readCreditsFromContract(currentAddress)
+            
+            if (newBalance >= expectedCredits) {
+              console.log("✅ Balance updated correctly!")
+              break
+            }
+          }
+        }
+        
+        // ✅ CORREÇÃO: Sempre atualizar o estado com o valor do contrato (fonte da verdade)
+        console.log("✅ Final balance from contract:", newBalance)
+        setCredits(prev => {
+          console.log(`🔄 Updating credits state from ${prev} to ${newBalance}`)
+          return Number(newBalance)
+        })
         
         console.log("✅ Credits purchased. New balance from contract:", newBalance)
       } catch (error: any) {
