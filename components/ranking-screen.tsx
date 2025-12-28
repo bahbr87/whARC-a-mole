@@ -269,11 +269,26 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         setClaimedRanks([])
       }
       
-      // ✅ CORREÇÃO: Só atualizar displayDate se for diferente do atual
-      // Isso evita re-renders desnecessários e mantém sincronia
-      if (date !== displayDate) {
-        console.log(`🔍 [RANKING-SCREEN] Updating displayDate in loadRanking: ${displayDate} -> ${date}`)
+      // ✅ CORREÇÃO: NÃO atualizar displayDate aqui se já foi atualizado no handleDateSelect
+      // O displayDate já foi atualizado no handleDateSelect antes de chamar loadRanking
+      // Só atualizar se for uma chamada inicial (quando displayDate ainda é o valor padrão)
+      // Isso evita que loadRanking sobrescreva o displayDate que foi setado no handleDateSelect
+      const currentDisplayDay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
+      const newDay = Math.floor(new Date(date + 'T00:00:00Z').getTime() / 86400000)
+      
+      // Só atualizar se os dias forem diferentes (não apenas as strings)
+      if (currentDisplayDay !== newDay) {
+        console.log(`🔍 [RANKING-SCREEN] Updating displayDate in loadRanking: ${displayDate} (day ${currentDisplayDay}) -> ${date} (day ${newDay})`)
         setDisplayDate(date)
+      } else {
+        console.log(`🔍 [RANKING-SCREEN] Skipping displayDate update in loadRanking (already correct):`, {
+          date,
+          displayDate,
+          currentDisplayDay,
+          newDay,
+          datesMatch: date === displayDate,
+          daysMatch: currentDisplayDay === newDay
+        })
       }
       console.log(`✅ [RANKING-SCREEN] Ranking loaded: ${data.ranking?.length || 0} players`)
     } catch (err: any) {
@@ -506,12 +521,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       })
       
       setCurrentPage(1) // Reset to first page when changing date
+      
+      // ✅ CORREÇÃO: Atualizar displayDate ANTES de chamar loadRanking
+      // Isso garante que o displayDate está correto quando canClaim é chamado
+      console.log(`📅 [RANKING-SCREEN] Updating displayDate: ${displayDate} -> ${dateString}`)
       setDisplayDate(dateString) // Update display date immediately
+      
       setShowCalendarDialog(false)
       setCalendarSelectedDate(undefined)
       
       // Load ranking immediately for the selected date
       console.log(`📅 [RANKING-SCREEN] Calling loadRanking with: ${dateString}`)
+      // ✅ CORREÇÃO: Passar skipDisplayDateUpdate=true para evitar que loadRanking sobrescreva o displayDate
       loadRanking(dateString)
       
       // If onViewDailyResults is provided, call it with the UTC date
@@ -687,6 +708,16 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               // ANTES: Usava paginatedRankings que vinha de rankings (useMemo intermediário)
               // PROBLEMA: Se o useMemo intermediário falhasse, paginatedRankings ficava vazio
               // AGORA: paginatedRankings é calculado diretamente de ranking, garantindo que os dados fluam corretamente
+              (() => {
+                console.log(`🔍 [RANKING-SCREEN] Rendering table with:`, {
+                  rankingLength: ranking.length,
+                  paginatedRankingsLength: paginatedRankings.length,
+                  displayDate,
+                  currentPage,
+                  itemsPerPage
+                })
+                return null
+              })(),
               <table className="w-full table-auto border-collapse">
                 <thead className="bg-amber-600 text-white">
                   <tr>
