@@ -34,13 +34,14 @@ export function useMetaTransactions(walletAddress?: string) {
    * Retorna true se processado com sucesso, false caso contrário
    */
   const processClickImmediately = useCallback(async (sessionId: string): Promise<boolean> => {
-    // Evitar processar o mesmo clique duas vezes
-    if (processingRef.current.has(sessionId)) {
-      console.log(`⏸️ [processClickImmediately] Click ${sessionId} already processing, skipping...`)
+    // 🔥 cada clique precisa de um ID único
+    const clickId = `${sessionId}-${crypto.randomUUID()}`
+
+    if (processingRef.current.has(clickId)) {
       return false
     }
 
-    processingRef.current.add(sessionId)
+    processingRef.current.add(clickId)
 
     try {
       // ✅ CORREÇÃO: Usar address diretamente (vem de walletAddress, fonte da verdade)
@@ -49,7 +50,7 @@ export function useMetaTransactions(walletAddress?: string) {
         console.error("❌ [processClickImmediately] No address or ethereum")
         console.error("   address:", address)
         console.error("   window.ethereum:", !!window.ethereum)
-        processingRef.current.delete(sessionId)
+        processingRef.current.delete(clickId)
         return false
       }
 
@@ -57,7 +58,7 @@ export function useMetaTransactions(walletAddress?: string) {
       // walletAddress já foi validado no GameScreen e é a fonte confiável
       const playerAddress = address.toLowerCase() // Normalizar para lowercase
       
-      console.log(`🚀 [processClickImmediately] Processing click IMMEDIATELY for session ${sessionId}`)
+      console.log(`🚀 [processClickImmediately] Processing click IMMEDIATELY for click ${clickId}`)
       console.log(`   Player: ${playerAddress}`)
       console.log(`   ⚡ This will generate a blockchain transaction NOW`)
       console.log(`   ✅ NO POPUP - Authorization already done when purchasing credits`)
@@ -79,7 +80,7 @@ export function useMetaTransactions(walletAddress?: string) {
       if (!response.ok) {
         const errorText = await response.text()
         console.error(`❌ [processClickImmediately] HTTP error ${response.status}:`, errorText)
-        processingRef.current.delete(sessionId)
+        processingRef.current.delete(clickId)
         return false
       }
 
@@ -93,16 +94,16 @@ export function useMetaTransactions(walletAddress?: string) {
         console.log(`   ⛽ Gas Used: ${data.gasUsed}`)
         console.log(`   💰 Créditos consumidos: 1`)
         console.log(`   ✅ Cada clique = uma transação on-chain confirmada!`)
-        processingRef.current.delete(sessionId)
+        processingRef.current.delete(clickId)
         return true // ✅ Retorna true para indicar sucesso
       } else {
         console.error(`❌ [processClickImmediately] Click processing failed:`, data.error || data.message)
-        processingRef.current.delete(sessionId)
+        processingRef.current.delete(clickId)
         return false
       }
     } catch (err: any) {
       console.error("❌ [processClickImmediately] Click failed:", err.message || err)
-      processingRef.current.delete(sessionId)
+      processingRef.current.delete(clickId)
       return false
     } finally {
       setPendingClicks(processingRef.current.size)
