@@ -1,11 +1,11 @@
 {
   "crons": [
     {
-      "path": "/api/cron/register-winners?token=SEU_SECRET_TOKEN",
-      "schedule": "5 0 * * *"
+      "path": "/api/cron/register-winners",
+      "schedule": "0 0 * * *"
     },
     {
-      "path": "/api/cron/fund-prizepool?token=SEU_SECRET_TOKEN",
+      "path": "/api/cron/fund-prizepool",
       "schedule": "0 0 * * 0"
     }
   ]

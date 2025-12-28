@@ -14,33 +14,52 @@
  */
 
 import { JsonRpcProvider, Contract, Wallet, isAddress, getAddress } from "ethers"
-import { promises as fs } from "fs"
-import path from "path"
+import { supabaseAdmin } from "@/lib/supabase"
 
 interface RankingEntry {
   player: string
-  score: number
-  goldenMoles: number
+  score: number // points from database
+  goldenMoles: number // golden_moles from database
   errors: number
   timestamp: number
 }
 
-const RANKINGS_FILE = path.join(process.cwd(), "data", "rankings.json")
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-// Load rankings from file
+// ✅ CORREÇÃO: Buscar rankings do Supabase em vez de arquivo
+// O sistema foi migrado para Supabase, então precisamos buscar os dados da tabela matches
 async function loadRankings(): Promise<RankingEntry[]> {
   try {
-    await fs.mkdir(path.dirname(RANKINGS_FILE), { recursive: true })
-    const data = await fs.readFile(RANKINGS_FILE, "utf-8")
-    const parsed = JSON.parse(data)
-    return Array.isArray(parsed) ? parsed : []
-  } catch (error: any) {
-    if (error.code === "ENOENT") {
-      return []
+    // Buscar todas as matches do Supabase
+    const { data: matches, error } = await supabaseAdmin
+      .from("matches")
+      .select("player, points, golden_moles, errors, timestamp")
+      .order("timestamp", { ascending: true });
+
+    if (error) {
+      console.error("[REGISTER-WINNERS] Error fetching matches from Supabase:", error);
+      return [];
     }
-    console.error("Error loading rankings:", error)
-    return []
+
+    if (!matches || matches.length === 0) {
+      console.log("[REGISTER-WINNERS] No matches found in Supabase");
+      return [];
+    }
+
+    // Converter para o formato RankingEntry (usando points como score)
+    const rankings: RankingEntry[] = matches.map((match: any) => ({
+      player: match.player || "",
+      score: match.points || 0, // points do banco vira score
+      goldenMoles: match.golden_moles || 0,
+      errors: match.errors || 0,
+      timestamp: new Date(match.timestamp).getTime(), // Converter ISO string para timestamp
+    }));
+
+    console.log(`[REGISTER-WINNERS] Loaded ${rankings.length} matches from Supabase`);
+    return rankings;
+  } catch (error: any) {
+    console.error("[REGISTER-WINNERS] Error loading rankings:", error);
+    return [];
   }
 }
 
