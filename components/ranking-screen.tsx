@@ -414,11 +414,14 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       return
     }
 
+    // Recalculate selectedDay from displayDate to ensure it's current
+    // Store in outer scope so it's available in catch block
+    const [year, month, day] = displayDate.split('-').map(Number)
+    const dateObj = new Date(Date.UTC(year, month - 1, day))
+    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+    const dateString = displayDate
+
     try {
-      // Recalculate selectedDay from displayDate to ensure it's current
-      const [year, month, day] = displayDate.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(year, month - 1, day))
-      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
       
       console.log(`[RANKING-SCREEN] Claiming prize: day=${selectedDay}, rank=${rank}, player=${currentPlayer}`)
       
@@ -476,7 +479,55 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         "function totalPlayers(uint256 day) view returns (uint256)",
       ]
 
+      const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
       const writeContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, signer)
+      
+      // ✅ CORREÇÃO: Verificar se o dia está finalizado antes de tentar fazer claim
+      // O contrato exige que totalPlayers[day] > 0 para permitir claim
+      // Isso só acontece quando o admin chama setDailyWinners() para registrar os vencedores
+      console.log(`🔍 [RANKING-SCREEN] Checking if day ${selectedDay} is finalized...`)
+      const totalPlayers = await readContract.totalPlayers(selectedDay)
+      console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}) = ${totalPlayers.toString()}`)
+      
+      if (totalPlayers === BigInt(0)) {
+        alert(
+          `Day not finalized yet!\n\n` +
+          `The day ${dateString} (day ${selectedDay}) has not been finalized in the contract.\n\n` +
+          `The admin needs to register the winners first using the /api/register-daily-winners endpoint.\n\n` +
+          `Please wait for the day to be finalized, or contact support if this is a past day.`
+        )
+        return
+      }
+      
+      // ✅ Verificar se o usuário é realmente um vencedor antes de tentar claim
+      console.log(`🔍 [RANKING-SCREEN] Verifying user is a winner for day ${selectedDay}...`)
+      let isWinner = false
+      let winnerRank = 0
+      
+      for (let checkRank = 1; checkRank <= 3; checkRank++) {
+        try {
+          const winnerAddress = await readContract.getWinner(selectedDay, checkRank)
+          console.log(`🔍 [RANKING-SCREEN] getWinner(${selectedDay}, ${checkRank}) = ${winnerAddress}`)
+          
+          if (winnerAddress.toLowerCase() === currentPlayer.toLowerCase()) {
+            isWinner = true
+            winnerRank = checkRank
+            console.log(`✅ [RANKING-SCREEN] User is winner at rank ${winnerRank}`)
+            break
+          }
+        } catch (err) {
+          console.warn(`[RANKING-SCREEN] Error checking rank ${checkRank}:`, err)
+        }
+      }
+      
+      if (!isWinner) {
+        alert(
+          `You are not a winner for this day!\n\n` +
+          `The day ${displayDate} (day ${selectedDay}) has been finalized, but you are not in the top 3 winners.\n\n` +
+          `Only the top 3 players can claim prizes.`
+        )
+        return
+      }
       
       // ✅ O contrato usa claim(day) que encontra o rank do usuário automaticamente
       console.log(`🔍 [RANKING-SCREEN] Calling contract.claim(${selectedDay})...`)
@@ -503,8 +554,38 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
       
+      // ✅ CORREÇÃO: Mensagens de erro mais específicas
+      const errorMessage = err?.message || err?.reason || String(err)
+      
+      if (errorMessage.includes("Day not finalized")) {
+        alert(
+          `Day not finalized!\n\n` +
+          `The day ${displayDate} (day ${selectedDay}) has not been finalized in the contract yet.\n\n` +
+          `The admin needs to register the winners first. Please wait or contact support.`
+        )
+        return
+      }
+      
+      if (errorMessage.includes("Not a winner") || errorMessage.includes("not a winner")) {
+        alert(
+          `You are not a winner for this day!\n\n` +
+          `The day ${displayDate} (day ${selectedDay}) has been finalized, but you are not in the top 3 winners.\n\n` +
+          `Only the top 3 players can claim prizes.`
+        )
+        return
+      }
+      
+      if (errorMessage.includes("Already claimed")) {
+        alert(
+          `Prize already claimed!\n\n` +
+          `You have already claimed the prize for day ${displayDate} (day ${selectedDay}).\n\n` +
+          `Each prize can only be claimed once.`
+        )
+        return
+      }
+      
       // Se o erro foi na chamada do contrato, mas o registro no banco foi bem-sucedido
-      alert(`Claim registered in database, but contract call failed:\n${err?.message || err}\n\nPlease try again or contact support.`)
+      alert(`Claim registered in database, but contract call failed:\n\n${errorMessage}\n\nPlease try again or contact support.`)
     }
   }, [currentPlayer, displayDate])
 
