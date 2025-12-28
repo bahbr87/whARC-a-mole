@@ -243,21 +243,20 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       setRanking(data.ranking || [])
 
-      // Load claims
+      // Load claims from database
       console.log(`🔍 [RANKING-SCREEN] Fetching claims for day ${selectedDay}`)
       const resClaims = await fetch(`/api/claimPrize?day=${selectedDay}`)
+      let dbClaims: ClaimData[] = []
+      
       if (resClaims.ok) {
         const claimsData = await resClaims.json()
-        console.log(`🔍 [RANKING-SCREEN] Claims loaded for day ${selectedDay}:`, {
+        dbClaims = claimsData.claims || []
+        console.log(`🔍 [RANKING-SCREEN] Claims from database for day ${selectedDay}:`, {
           claimsData,
-          claims: claimsData.claims || [],
-          claimsLength: claimsData.claims?.length || 0,
-          claimedRanks: (claimsData.claims || []).map((c: ClaimData) => c.rank)
+          claims: dbClaims,
+          claimsLength: dbClaims.length,
+          claimedRanks: dbClaims.map((c: ClaimData) => c.rank)
         })
-        setClaims(claimsData.claims || [])
-        const ranks = (claimsData.claims || []).map((c: ClaimData) => c.rank)
-        console.log(`🔍 [RANKING-SCREEN] Setting claimedRanks:`, ranks)
-        setClaimedRanks(ranks)
       } else {
         const errorText = await resClaims.text()
         console.warn(`🔍 [RANKING-SCREEN] Failed to load claims for day ${selectedDay}:`, {
@@ -265,9 +264,68 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
           statusText: resClaims.statusText,
           error: errorText
         })
-        setClaims([])
-        setClaimedRanks([])
       }
+      
+      // ✅ CORREÇÃO: Verificar no contrato se realmente foi claimed
+      // O banco pode ter registros de claims que falharam no contrato
+      // Só considerar como claimed se o contrato confirmar
+      let verifiedClaims: ClaimData[] = []
+      let verifiedRanks: number[] = []
+      
+      if (dbClaims.length > 0 && typeof window !== "undefined" && window.ethereum) {
+        try {
+          const { BrowserProvider, Contract } = await import("ethers")
+          const provider = new BrowserProvider(window.ethereum)
+          const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+          
+          if (PRIZE_POOL_ADDRESS) {
+            const PRIZE_POOL_ABI = [
+              "function claimed(uint256 day, address user) view returns (bool)",
+            ]
+            
+            const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+            
+            console.log(`🔍 [RANKING-SCREEN] Verifying claims on contract for day ${selectedDay}...`)
+            
+            // Verificar cada claim no contrato
+            for (const claim of dbClaims) {
+              try {
+                const isClaimedOnChain = await readContract.claimed(selectedDay, claim.player)
+                console.log(`🔍 [RANKING-SCREEN] Contract.claimed(${selectedDay}, ${claim.player}) = ${isClaimedOnChain}`)
+                
+                if (isClaimedOnChain) {
+                  verifiedClaims.push(claim)
+                  verifiedRanks.push(claim.rank)
+                } else {
+                  console.log(`⚠️ [RANKING-SCREEN] Claim in database but not on contract: rank ${claim.rank}, player ${claim.player}`)
+                }
+              } catch (err) {
+                console.warn(`[RANKING-SCREEN] Error verifying claim for rank ${claim.rank}:`, err)
+                // Se não conseguir verificar, não incluir (assume que não foi claimed)
+              }
+            }
+            
+            console.log(`✅ [RANKING-SCREEN] Verified claims:`, {
+              dbClaims: dbClaims.length,
+              verifiedClaims: verifiedClaims.length,
+              verifiedRanks
+            })
+          }
+        } catch (err) {
+          console.warn(`[RANKING-SCREEN] Error verifying claims on contract:`, err)
+          // Se não conseguir verificar no contrato, usar os claims do banco como fallback
+          verifiedClaims = dbClaims
+          verifiedRanks = dbClaims.map((c: ClaimData) => c.rank)
+        }
+      } else {
+        // Se não tiver wallet conectada, usar claims do banco como fallback
+        verifiedClaims = dbClaims
+        verifiedRanks = dbClaims.map((c: ClaimData) => c.rank)
+      }
+      
+      setClaims(verifiedClaims)
+      console.log(`🔍 [RANKING-SCREEN] Setting claimedRanks:`, verifiedRanks)
+      setClaimedRanks(verifiedRanks)
       
       // ✅ CORREÇÃO: NÃO atualizar displayDate aqui se já foi atualizado no handleDateSelect
       // O displayDate já foi atualizado no handleDateSelect antes de chamar loadRanking
@@ -420,32 +478,42 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     const dateObj = new Date(Date.UTC(year, month - 1, day))
     const selectedDay = Math.floor(dateObj.getTime() / 86400000)
     const dateString = displayDate
+    let dbRegistrationSuccess = false
 
     try {
-      
       console.log(`[RANKING-SCREEN] Claiming prize: day=${selectedDay}, rank=${rank}, player=${currentPlayer}`)
       
       // ✅ PASSO 1: Registrar no banco (validação de segurança)
       console.log(`🔍 [RANKING-SCREEN] Step 1: Registering claim in database...`)
-      const res = await fetch("/api/claimPrize", {
-        method: "POST",
-        body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
-        headers: { "Content-Type": "application/json" }
-      })
+      let dbRegistrationError: string | null = null
+      
+      try {
+        const res = await fetch("/api/claimPrize", {
+          method: "POST",
+          body: JSON.stringify({ day: selectedDay, rank, player: currentPlayer }),
+          headers: { "Content-Type": "application/json" }
+        })
 
-      const data = await res.json()
+        const data = await res.json()
 
-      console.log(`🔍 [RANKING-SCREEN] Database registration response:`, {
-        status: res.status,
-        data
-      })
+        console.log(`🔍 [RANKING-SCREEN] Database registration response:`, {
+          status: res.status,
+          data
+        })
 
-      if (!res.ok || data.error) {
-        console.error(`🔍 [RANKING-SCREEN] Database registration failed:`, data.error || 'Unknown error')
-        return alert(data.error || "Failed to register claim")
+        if (!res.ok || data.error) {
+          dbRegistrationError = data.error || 'Unknown error'
+          console.error(`🔍 [RANKING-SCREEN] Database registration failed:`, dbRegistrationError)
+          return alert(dbRegistrationError || "Failed to register claim")
+        }
+
+        dbRegistrationSuccess = true
+        console.log(`✅ [RANKING-SCREEN] Step 1 complete: Claim registered in database`)
+      } catch (dbErr: any) {
+        dbRegistrationError = dbErr?.message || 'Database registration failed'
+        console.error(`🔍 [RANKING-SCREEN] Database registration error:`, dbErr)
+        return alert(`Failed to register claim: ${dbRegistrationError}`)
       }
-
-      console.log(`✅ [RANKING-SCREEN] Step 1 complete: Claim registered in database`)
 
       // ✅ PASSO 2: Chamar contrato no frontend (transferência de USDC)
       // O backend não pode chamar o contrato porque precisa da assinatura da wallet do usuário
@@ -537,10 +605,23 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       await tx.wait()
       console.log(`✅ [RANKING-SCREEN] Step 2 complete: Transaction confirmed! Hash: ${tx.hash}`)
 
-      // Update claims state
-      console.log(`🔍 [RANKING-SCREEN] Updating UI state...`)
-      setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
-      setClaimedRanks(prev => [...prev, rank])
+      // ✅ CORREÇÃO: Verificar no contrato se realmente foi claimed antes de atualizar estado
+      // Isso garante que só marcamos como claimed se o contrato confirmar
+      console.log(`🔍 [RANKING-SCREEN] Verifying claim on contract...`)
+      const isClaimedOnChain = await readContract.claimed(selectedDay, currentPlayer)
+      console.log(`🔍 [RANKING-SCREEN] Contract.claimed(${selectedDay}, ${currentPlayer}) = ${isClaimedOnChain}`)
+      
+      if (isClaimedOnChain) {
+        // Update claims state only if contract confirms
+        console.log(`🔍 [RANKING-SCREEN] Updating UI state (contract confirmed)...`)
+        setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
+        setClaimedRanks(prev => [...prev, rank])
+      } else {
+        console.warn(`⚠️ [RANKING-SCREEN] Transaction confirmed but contract.claimed() returned false. This should not happen.`)
+        // Ainda assim atualizar o estado, pois a transação foi confirmada
+        setClaims(prev => [...prev, { player: currentPlayer.toLowerCase(), rank }])
+        setClaimedRanks(prev => [...prev, rank])
+      }
       
       // ✅ Mostrar hash da transação e link para verificar
       const explorerUrl = `https://testnet.arcscan.app/tx/${tx.hash}`
@@ -557,11 +638,19 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       // ✅ CORREÇÃO: Mensagens de erro mais específicas
       const errorMessage = err?.message || err?.reason || String(err)
       
+      // ✅ CORREÇÃO: Se o contrato falhou, informar sobre o registro no banco
+      // O banco foi atualizado no passo 1, mas o contrato falhou no passo 2
+      // O usuário pode tentar novamente - a verificação no contrato vai ignorar o registro do banco se não foi claimed
+      if (dbRegistrationSuccess) {
+        console.warn(`⚠️ [RANKING-SCREEN] Database has claim record but contract failed. User can try again.`)
+      }
+      
       if (errorMessage.includes("Day not finalized")) {
         alert(
           `Day not finalized!\n\n` +
           `The day ${displayDate} (day ${selectedDay}) has not been finalized in the contract yet.\n\n` +
-          `The admin needs to register the winners first. Please wait or contact support.`
+          `The admin needs to register the winners first. Please wait or contact support.\n\n` +
+          `Note: The claim was registered in the database but will be ignored until the day is finalized.`
         )
         return
       }
@@ -576,6 +665,37 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
       
       if (errorMessage.includes("Already claimed")) {
+        // ✅ CORREÇÃO: Verificar no contrato se realmente foi claimed
+        // Pode ser que o banco tenha registro mas o contrato não
+        if (typeof window !== "undefined" && window.ethereum) {
+          try {
+            const { BrowserProvider, Contract } = await import("ethers")
+            const provider = new BrowserProvider(window.ethereum)
+            const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+            
+            if (PRIZE_POOL_ADDRESS) {
+              const PRIZE_POOL_ABI = [
+                "function claimed(uint256 day, address user) view returns (bool)",
+              ]
+              const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+              const isClaimedOnChain = await readContract.claimed(selectedDay, currentPlayer)
+              
+              if (!isClaimedOnChain) {
+                // Contrato diz que não foi claimed, mas banco tem registro
+                // Isso significa que uma tentativa anterior falhou
+                alert(
+                  `Previous claim attempt failed!\n\n` +
+                  `The database has a record of a previous claim attempt, but the contract shows it was not completed.\n\n` +
+                  `You can try claiming again. If the problem persists, contact support.`
+                )
+                return
+              }
+            }
+          } catch (verifyErr) {
+            console.warn(`[RANKING-SCREEN] Could not verify claim status:`, verifyErr)
+          }
+        }
+        
         alert(
           `Prize already claimed!\n\n` +
           `You have already claimed the prize for day ${displayDate} (day ${selectedDay}).\n\n` +
@@ -585,7 +705,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
       
       // Se o erro foi na chamada do contrato, mas o registro no banco foi bem-sucedido
-      alert(`Claim registered in database, but contract call failed:\n\n${errorMessage}\n\nPlease try again or contact support.`)
+      alert(
+        `Claim registered in database, but contract call failed:\n\n${errorMessage}\n\n` +
+        `The database has a record of this claim attempt, but the prize was not transferred.\n\n` +
+        `You can try claiming again. If the problem persists, contact support.`
+      )
     }
   }, [currentPlayer, displayDate])
 
