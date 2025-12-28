@@ -359,14 +359,21 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
   const recordClick = useCallback(
     async (sessionId: string) => {
       // This is handled by the backend via meta-transactions
-      // Just refresh credits after a delay
+      // Refresh credits after a delay to ensure we have the latest balance
       if (walletAddress && walletAddress.trim() !== "") {
-        setTimeout(() => {
-          refreshCredits()
-        }, 2000)
+        console.log("🔄 recordClick: Scheduling credits refresh...")
+        setTimeout(async () => {
+          try {
+            await refreshCredits()
+            const newBalance = await readCreditsFromContract(walletAddress)
+            console.log("✅ recordClick: Credits refreshed. New balance:", Number(newBalance))
+          } catch (error) {
+            console.error("❌ recordClick: Error refreshing credits:", error)
+          }
+        }, 3000) // Aumentado para 3s para garantir que a transação foi processada
       }
     },
-    [walletAddress, refreshCredits],
+    [walletAddress, refreshCredits, readCreditsFromContract],
   )
 
   // Get credits balance directly from contract (source of truth)
@@ -404,11 +411,12 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
       // Read balance from contract immediately
       refreshCredits()
       
-      // Poll every 3 seconds to keep in sync (backup to events)
+      // Poll every 2 seconds to keep in sync (backup to events)
+      // Reduzido para 2s para atualizar mais rapidamente após consumo
       interval = setInterval(() => {
         console.log("🔄 Polling credits from contract...")
         refreshCredits()
-      }, 3000)
+      }, 2000)
     } else {
       // No walletAddress - set to 0
       console.log("🔄 useEffect: No walletAddress available, setting credits to 0")

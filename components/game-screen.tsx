@@ -576,6 +576,20 @@ export function GameScreen({
           errors: errorsRef.current,
         })
         console.log("✅ onGameComplete called")
+        
+        // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar
+        // Os créditos foram consumidos durante o jogo via meta-transactions
+        // Precisamos atualizar o saldo exibido
+        console.log("🔄 Refreshing credits after game completion...")
+        setTimeout(async () => {
+          try {
+            await refreshCredits()
+            const newBalance = await getCreditsBalance()
+            console.log("✅ Credits refreshed after game. New balance:", newBalance)
+          } catch (error) {
+            console.error("❌ Error refreshing credits after game:", error)
+          }
+        }, 2000) // Delay de 2s para garantir que a transação foi processada
       }
     }, 1000)
 
@@ -792,6 +806,18 @@ export function GameScreen({
                     goldenMolesHit,
                     errors: errorsRef.current,
                   })
+                  
+                  // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar
+                  console.log("🔄 Refreshing credits after game completion (paused)...")
+                  setTimeout(async () => {
+                    try {
+                      await refreshCredits()
+                      const newBalance = await getCreditsBalance()
+                      console.log("✅ Credits refreshed after game. New balance:", newBalance)
+                    } catch (error) {
+                      console.error("❌ Error refreshing credits after game:", error)
+                    }
+                  }, 2000) // Delay de 2s para garantir que a transação foi processada
                 }}
                 variant="outline"
                 className="w-full border-2 border-red-600 text-red-900 hover:bg-red-50 font-bold text-lg py-6"

@@ -129,6 +129,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   const [currentPage, setCurrentPage] = useState(1)
   const [showCalendarDialog, setShowCalendarDialog] = useState(false)
+  const [showClaimSuccessDialog, setShowClaimSuccessDialog] = useState(false)
+  const [claimSuccessData, setClaimSuccessData] = useState<{ rank: number; prizeAmount: string; txHash: string } | null>(null)
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined)
   
   // Initialize displayDate with selectedDate prop or default to today
@@ -623,9 +625,21 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         setClaimedRanks(prev => [...prev, rank])
       }
       
-      // ✅ Mostrar hash da transação e link para verificar
-      const explorerUrl = `https://testnet.arcscan.app/tx/${tx.hash}`
-      alert(`Prize claimed successfully!\n\nTransaction Hash: ${tx.hash}\n\nView on ArcScan: ${explorerUrl}\n\nPlease check your wallet balance.`)
+      // ✅ Mostrar popup com informações do prêmio
+      const prizeAmounts: Record<number, string> = {
+        1: "$20 USDC",
+        2: "$10 USDC",
+        3: "$5 USDC",
+      }
+      const prizeAmount = prizeAmounts[rank] || "Unknown"
+      
+      setClaimSuccessData({
+        rank,
+        prizeAmount,
+        txHash: tx.hash,
+      })
+      setShowClaimSuccessDialog(true)
+      setShowClaimSuccessDialog(true)
     } catch (err: any) {
       console.error(`[RANKING-SCREEN] Claim error:`, err)
       
@@ -912,6 +926,64 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Claim Success Dialog */}
+        <Dialog open={showClaimSuccessDialog} onOpenChange={setShowClaimSuccessDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-center text-green-600">
+                🎉 Prize Claimed Successfully!
+              </DialogTitle>
+            </DialogHeader>
+            {claimSuccessData && (
+              <div className="space-y-6 py-4">
+                <div className="text-center">
+                  <div className="text-6xl mb-4">
+                    {claimSuccessData.rank === 1 && "🥇"}
+                    {claimSuccessData.rank === 2 && "🥈"}
+                    {claimSuccessData.rank === 3 && "🥉"}
+                  </div>
+                  <div className="text-3xl font-bold text-amber-900 mb-2">
+                    {claimSuccessData.rank === 1 && "1st Place"}
+                    {claimSuccessData.rank === 2 && "2nd Place"}
+                    {claimSuccessData.rank === 3 && "3rd Place"}
+                  </div>
+                  <div className="text-4xl font-bold text-green-600 mb-4">
+                    {claimSuccessData.prizeAmount}
+                  </div>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Your prize has been transferred to your wallet!
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
+                  <p className="text-xs text-gray-500 mb-2">Transaction Hash:</p>
+                  <p className="text-xs font-mono text-gray-700 break-all mb-3">
+                    {claimSuccessData.txHash}
+                  </p>
+                  <a
+                    href={`https://testnet.arcscan.app/tx/${claimSuccessData.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-800 underline"
+                  >
+                    View on ArcScan →
+                  </a>
+                </div>
+                <div className="flex justify-center">
+                  <Button
+                    onClick={() => {
+                      setShowClaimSuccessDialog(false)
+                      setClaimSuccessData(null)
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <Card className="p-6 bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-4 border-blue-700">
           <div className="text-center space-y-3">
