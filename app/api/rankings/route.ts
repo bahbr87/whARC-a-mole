@@ -71,10 +71,42 @@ export async function GET(req: Request) {
 
     console.log(`[RANKINGS] Found ${data?.length || 0} matches with day=${day}`);
     
-    // If we have results, return them
+    // ✅ CORREÇÃO: Agregar matches por jogador (somar points, golden_moles, errors)
+    // ANTES: Retornava todas as matches individuais (8 matches para 3 jogadores)
+    // AGORA: Agrega por jogador e retorna apenas jogadores únicos com totais
     if (data && data.length > 0) {
-      console.log(`[RANKINGS] Returning ${data.length} matches`);
-      return new Response(JSON.stringify({ ranking: data }), {
+      // Agregar por jogador (case-insensitive)
+      const playerMap = new Map<string, { player: string; points: number; golden_moles: number; errors: number }>();
+      
+      data.forEach((match: any) => {
+        const playerLower = (match.player || '').toLowerCase().trim();
+        if (!playerLower) return;
+        
+        if (playerMap.has(playerLower)) {
+          const existing = playerMap.get(playerLower)!;
+          existing.points += match.points || 0;
+          existing.golden_moles += match.golden_moles || 0;
+          existing.errors += match.errors || 0;
+        } else {
+          playerMap.set(playerLower, {
+            player: match.player, // Manter o endereço original (não lowercase)
+            points: match.points || 0,
+            golden_moles: match.golden_moles || 0,
+            errors: match.errors || 0
+          });
+        }
+      });
+      
+      // Converter para array e ordenar
+      const aggregated = Array.from(playerMap.values()).sort((a, b) => {
+        // Ordenar por: points (desc), golden_moles (desc), errors (asc)
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.golden_moles !== a.golden_moles) return b.golden_moles - a.golden_moles;
+        return a.errors - b.errors;
+      });
+      
+      console.log(`[RANKINGS] Aggregated ${data.length} matches into ${aggregated.length} unique players`);
+      return new Response(JSON.stringify({ ranking: aggregated }), {
         status: 200,
       });
     }
@@ -125,7 +157,37 @@ export async function GET(req: Request) {
       console.log(`[RANKINGS] After filtering by calculated day: ${filtered.length} matches`);
       
       if (filtered.length > 0) {
-        return new Response(JSON.stringify({ ranking: filtered }), {
+        // ✅ CORREÇÃO: Agregar matches por jogador (mesma lógica do caso principal)
+        const playerMap = new Map<string, { player: string; points: number; golden_moles: number; errors: number }>();
+        
+        filtered.forEach((match: any) => {
+          const playerLower = (match.player || '').toLowerCase().trim();
+          if (!playerLower) return;
+          
+          if (playerMap.has(playerLower)) {
+            const existing = playerMap.get(playerLower)!;
+            existing.points += match.points || 0;
+            existing.golden_moles += match.golden_moles || 0;
+            existing.errors += match.errors || 0;
+          } else {
+            playerMap.set(playerLower, {
+              player: match.player,
+              points: match.points || 0,
+              golden_moles: match.golden_moles || 0,
+              errors: match.errors || 0
+            });
+          }
+        });
+        
+        // Converter para array e ordenar
+        const aggregated = Array.from(playerMap.values()).sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.golden_moles !== a.golden_moles) return b.golden_moles - a.golden_moles;
+          return a.errors - b.errors;
+        });
+        
+        console.log(`[RANKINGS] Aggregated ${filtered.length} matches into ${aggregated.length} unique players`);
+        return new Response(JSON.stringify({ ranking: aggregated }), {
           status: 200,
         });
       }

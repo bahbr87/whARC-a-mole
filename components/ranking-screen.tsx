@@ -532,15 +532,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       // Load ranking immediately for the selected date
       console.log(`📅 [RANKING-SCREEN] Calling loadRanking with: ${dateString}`)
-      // ✅ CORREÇÃO: Passar skipDisplayDateUpdate=true para evitar que loadRanking sobrescreva o displayDate
       loadRanking(dateString)
       
-      // If onViewDailyResults is provided, call it with the UTC date
-      if (onViewDailyResults) {
-        const utcDate = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0))
-        console.log(`📅 [RANKING-SCREEN] Calling onViewDailyResults with:`, utcDate.toISOString())
-        onViewDailyResults(utcDate)
-      }
+      // ✅ CORREÇÃO: NÃO chamar onViewDailyResults aqui - isso muda o gameState para daily-results
+      // ANTES: Chamava onViewDailyResults imediatamente, mudando para daily-results screen
+      // PROBLEMA: Isso fazia o RankingScreen desaparecer antes de renderizar a tabela com o botão de claim
+      // AGORA: Deixamos o usuário ver o ranking primeiro, e ele pode clicar em "View Past Results" se quiser
+      // Se onViewDailyResults is provided, call it with the UTC date (comentado para não mudar de tela)
+      // if (onViewDailyResults) {
+      //   const utcDate = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0))
+      //   console.log(`📅 [RANKING-SCREEN] Calling onViewDailyResults with:`, utcDate.toISOString())
+      //   onViewDailyResults(utcDate)
+      // }
     }
   }
 
@@ -714,7 +717,10 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                   paginatedRankingsLength: paginatedRankings.length,
                   displayDate,
                   currentPage,
-                  itemsPerPage
+                  itemsPerPage,
+                  loading,
+                  error,
+                  willRenderTable: true
                 })
                 return null
               })(),
