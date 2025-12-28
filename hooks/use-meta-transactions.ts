@@ -2,17 +2,26 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { BrowserProvider } from "ethers"
-import { useArcWallet } from "./use-arc-wallet"
 
 /**
  * ✅ REGRA PRIMORDIAL: CADA CLIQUE = UMA TRANSAÇÃO NA BLOCKCHAIN
  * 
  * Este hook processa cada clique IMEDIATAMENTE, sem fila ou batch.
  * Cada clique deve gerar uma transação on-chain individual.
+ * 
+ * ✅ CORREÇÃO: Agora aceita walletAddress como parâmetro para garantir sincronização
  */
 
-export function useMetaTransactions() {
-  const { address, isConnected } = useArcWallet()
+export function useMetaTransactions(walletAddress?: string) {
+  // ✅ CORREÇÃO: Usar walletAddress passado como parâmetro (fonte da verdade)
+  // walletAddress vem do GameScreen e é a fonte confiável de conexão
+  const address = walletAddress && walletAddress.trim() !== "" ? walletAddress : null
+  const isConnected = !!address && typeof window !== "undefined" && !!window.ethereum
+  
+  // ✅ CORREÇÃO: Log para debug
+  useEffect(() => {
+    console.log(`🔍 [useMetaTransactions] walletAddress: ${walletAddress}, address: ${address}, isConnected: ${isConnected}`)
+  }, [walletAddress, address, isConnected])
 
   // ✅ CORREÇÃO: Remover fila - processar cada clique imediatamente
   const processingRef = useRef<Set<string>>(new Set()) // Rastrear cliques em processamento
@@ -22,34 +31,34 @@ export function useMetaTransactions() {
   /**
    * ✅ CORREÇÃO: Processar clique IMEDIATAMENTE, sem fila
    * Cada clique gera uma transação on-chain individual
+   * Retorna true se processado com sucesso, false caso contrário
    */
-  const processClickImmediately = useCallback(async (sessionId: string) => {
+  const processClickImmediately = useCallback(async (sessionId: string): Promise<boolean> => {
     // Evitar processar o mesmo clique duas vezes
     if (processingRef.current.has(sessionId)) {
       console.log(`⏸️ [processClickImmediately] Click ${sessionId} already processing, skipping...`)
-      return
+      return false
     }
 
     processingRef.current.add(sessionId)
 
     try {
-      if (!address || !window.ethereum) {
+      // ✅ CORREÇÃO: Usar address diretamente (vem de walletAddress, fonte da verdade)
+      // Não depender de eth_accounts que pode falhar ou retornar vazio
+      if (!address || address.trim() === "" || !window.ethereum) {
         console.error("❌ [processClickImmediately] No address or ethereum")
+        console.error("   address:", address)
+        console.error("   window.ethereum:", !!window.ethereum)
         processingRef.current.delete(sessionId)
-        return
+        return false
       }
 
-      // ✅ IMPORTANTE: eth_accounts NÃO solicita confirmação - apenas retorna contas conectadas
-      // Não há popup ou confirmação aqui - a autorização já foi feita ao comprar créditos
-      const accounts = await window.ethereum.request({ method: "eth_accounts" })
-      if (!accounts || accounts.length === 0) {
-        console.error("❌ [processClickImmediately] No accounts")
-        processingRef.current.delete(sessionId)
-        return
-      }
-
+      // ✅ CORREÇÃO: Usar address diretamente, sem chamar eth_accounts
+      // walletAddress já foi validado no GameScreen e é a fonte confiável
+      const playerAddress = address.toLowerCase() // Normalizar para lowercase
+      
       console.log(`🚀 [processClickImmediately] Processing click IMMEDIATELY for session ${sessionId}`)
-      console.log(`   Player: ${accounts[0]}`)
+      console.log(`   Player: ${playerAddress}`)
       console.log(`   ⚡ This will generate a blockchain transaction NOW`)
       console.log(`   ✅ NO POPUP - Authorization already done when purchasing credits`)
       
@@ -60,7 +69,7 @@ export function useMetaTransactions() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          player: accounts[0],
+          player: playerAddress, // ✅ Usar address diretamente, sem depender de eth_accounts
           sessionId,
           clickCount: 1, // ✅ SEMPRE 1 clique por transação
           authorized: true, // ✅ Autorização já feita ao comprar créditos - SEM POPUP
@@ -71,7 +80,7 @@ export function useMetaTransactions() {
         const errorText = await response.text()
         console.error(`❌ [processClickImmediately] HTTP error ${response.status}:`, errorText)
         processingRef.current.delete(sessionId)
-        return
+        return false
       }
 
       const data = await response.json()
@@ -84,13 +93,18 @@ export function useMetaTransactions() {
         console.log(`   ⛽ Gas Used: ${data.gasUsed}`)
         console.log(`   💰 Créditos consumidos: 1`)
         console.log(`   ✅ Cada clique = uma transação on-chain confirmada!`)
+        processingRef.current.delete(sessionId)
+        return true // ✅ Retorna true para indicar sucesso
       } else {
         console.error(`❌ [processClickImmediately] Click processing failed:`, data.error || data.message)
+        processingRef.current.delete(sessionId)
+        return false
       }
     } catch (err: any) {
       console.error("❌ [processClickImmediately] Click failed:", err.message || err)
-    } finally {
       processingRef.current.delete(sessionId)
+      return false
+    } finally {
       setPendingClicks(processingRef.current.size)
     }
   }, [address])
@@ -98,12 +112,15 @@ export function useMetaTransactions() {
   /**
    * ✅ CORREÇÃO: recordClick agora processa IMEDIATAMENTE, sem fila
    * Cada clique gera uma transação on-chain individual e imediata
+   * Retorna true se processado com sucesso, false caso contrário
    */
   const recordClick = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string): Promise<boolean> => {
       if (!isConnected || !address) {
-        console.log("❌ [recordClick] Not connected or no address")
-        return
+        console.error("❌ [recordClick] Not connected or no address - click NOT processed")
+        console.error("   isConnected:", isConnected)
+        console.error("   address:", address)
+        return false // ✅ Retorna false para indicar que NÃO foi processado
       }
 
       console.log(`🖱️ [recordClick] Click detected - processing IMMEDIATELY (no queue)`)
@@ -112,8 +129,9 @@ export function useMetaTransactions() {
       
       // ✅ CORREÇÃO: Processar imediatamente, sem adicionar à fila
       setPendingClicks(prev => prev + 1)
-      await processClickImmediately(sessionId)
+      const success = await processClickImmediately(sessionId)
       setPendingClicks(prev => Math.max(0, prev - 1))
+      return success // ✅ Retorna o resultado do processamento
     },
     [isConnected, address, processClickImmediately],
   )

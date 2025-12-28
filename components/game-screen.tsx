@@ -295,7 +295,8 @@ export function GameScreen({
   const [showCreditsDialog, setShowCreditsDialog] = useState(false)
   const [showCreditsRequiredDialog, setShowCreditsRequiredDialog] = useState(false)
   const [gameSessionId, setGameSessionId] = useState<string>("")
-  const { recordClick, isAuthorized, authorize, pendingClicks } = useMetaTransactions()
+  // ✅ CORREÇÃO: Passar walletAddress para useMetaTransactions para garantir sincronização
+  const { recordClick, isAuthorized, authorize, pendingClicks } = useMetaTransactions(walletAddress)
   
   // ✅ CORREÇÃO: Ref para rastrear se há transações pendentes
   const pendingTransactionsRef = useRef<Set<string>>(new Set())
@@ -524,8 +525,13 @@ export function GameScreen({
       // This is the core requirement - every click = one transaction on-chain
       console.log("🖱️  CLICK DETECTED - Processing on-chain transaction...")
       recordClick(gameSessionId)
-        .then(() => {
-          console.log("✅ Click transaction processed successfully")
+        .then((success) => {
+          // ✅ CORREÇÃO: Só mostrar sucesso se realmente foi processado
+          // O recordClick já tem logs detalhados, então não precisamos duplicar
+          if (!success) {
+            console.warn("⚠️ Click detected but NOT processed (wallet not connected or error)")
+          }
+          // Não mostrar "success" aqui - os logs detalhados já estão em recordClick
         })
         .catch((error) => {
           // Log error but don't break the game
