@@ -73,6 +73,14 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
   console.log("   Session data:", sessionData)
   console.log("   Score:", sessionData.score)
 
+  const handleShareOnX = () => {
+    playClickSound()
+    const message = `I've just scored ${sessionData.score} points on whARC-a-mole. Can you score more? https://wharc-a-mole.xyz`
+    const encodedMessage = encodeURIComponent(message)
+    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodedMessage}`
+    window.open(twitterUrl, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <div className="min-h-screen p-4 flex items-center justify-center">
       <Card className="w-full max-w-2xl p-8 bg-white/95 backdrop-blur border-4 border-amber-900 shadow-2xl">
@@ -133,6 +141,26 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
             >
               <Trophy className="mr-2 h-5 w-5" />
               View Ranking
+            </Button>
+          </div>
+
+          {/* Share on X Button */}
+          <div className="pt-2">
+            <Button
+              onClick={handleShareOnX}
+              size="lg"
+              variant="outline"
+              className="w-full border-2 border-amber-600 text-amber-900 hover:bg-amber-50 font-bold text-lg py-6 bg-transparent"
+            >
+              <svg
+                className="mr-2 h-5 w-5"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+              Share your results on X
             </Button>
           </div>
         </div>
