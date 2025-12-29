@@ -75,7 +75,7 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
 
   const handleShareOnX = () => {
     playClickSound()
-    const message = `I've just scored ${sessionData.score} points on whARC-a-mole. Can you score more? https://wharc-a-mole.xyz`
+    const message = `I've just scored ${sessionData.score} points on whARC-a-mole. Do you think you can you score more? https://wharc-a-mole.xyz #Arc #Web3 #Arctestnet #wharcamole`
     const encodedMessage = encodeURIComponent(message)
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodedMessage}`
     window.open(twitterUrl, '_blank', 'noopener,noreferrer')
