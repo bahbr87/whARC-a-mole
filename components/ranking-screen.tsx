@@ -1049,9 +1049,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               // AGORA: Verificamos ranking diretamente, que é a fonte única da verdade
               <div className="text-center py-8">
                 <p className="text-gray-600">No players found for this day.</p>
-                <p className="text-xs text-gray-400 mt-2">
-                  Debug: ranking.length = {ranking.length}, loading = {String(loading)}, error = {error || 'null'}
-                </p>
               </div>
             ) : (
               // ✅ CORREÇÃO: Renderizar usando paginatedRankings que é derivado diretamente de ranking

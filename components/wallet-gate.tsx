@@ -109,7 +109,7 @@ export function WalletGate({ onConnect }: WalletGateProps) {
           {/* Logo */}
           <div className="flex items-center justify-center gap-4 mb-4">
             <Image 
-              src="/mole2.png" 
+              src="/imagem wharcamole2.png" 
               alt="Whac-a-mole logo" 
               width={256} 
               height={256}

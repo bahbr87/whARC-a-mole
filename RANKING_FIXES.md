@@ -83,3 +83,4 @@ Os logs estão prefixados com `🔍 [RANKING-SCREEN]` para fácil identificaçã
 3. Aplicar correções adicionais baseadas nos logs
 4. Remover logs de debug após correção (opcional)
 
+
