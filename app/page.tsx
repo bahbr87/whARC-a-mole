@@ -468,7 +468,7 @@ function WharcAMoleContent() {
       {gameState === "game" && (
         <footer className="fixed bottom-4 right-4 z-50 flex gap-4 items-center">
           <a
-            href="https://x.com/AWharc40234"
+            href="https://x.com/wharcamole"
             target="_blank"
             rel="noopener noreferrer"
             className="w-10 h-10 rounded-full bg-white/95 hover:bg-white border-4 border-amber-900 flex items-center justify-center transition-all hover:scale-110 shadow-lg"
