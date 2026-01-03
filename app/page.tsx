@@ -51,6 +51,10 @@ export interface GameSession {
 
   errors: number
 
+  gameDuration?: number // Game duration in seconds
+
+  completed?: boolean // Whether the game was completed to the end
+
 }
 
 
@@ -345,7 +349,7 @@ function WharcAMoleContent() {
 
           try {
 
-            await fetch("/api/saveMatch", {
+            const response = await fetch("/api/saveMatch", {
 
               method: "POST",
 
@@ -359,11 +363,49 @@ function WharcAMoleContent() {
 
                 golden_moles: data.goldenMolesHit,
 
-                errors: data.errors
+                errors: data.errors,
+
+                game_duration: data.gameDuration || 30, // Game duration in seconds
+
+                completed: data.completed !== false // Default to true if not specified
 
               })
 
             })
+
+            const result = await response.json()
+
+            if (!response.ok) {
+
+              // Show user-friendly error message if validation failed
+
+              if (result.code === 'MAX_MATCHES_REACHED') {
+
+                alert(`Maximum 9 matches per day reached. Please try again tomorrow.`)
+
+              } else if (result.code === 'MAX_GOLDEN_MOLES_EXCEEDED') {
+
+                alert(`Maximum 9 golden moles per day exceeded. This appears to be fraudulent.`)
+
+              } else if (result.code === 'MAX_POINTS_EXCEEDED') {
+
+                alert(`Maximum points per day exceeded. This appears to be fraudulent.`)
+
+              } else if (result.code === 'GAME_NOT_COMPLETED') {
+
+                alert(`Match not completed. Only matches played to the end count for points.`)
+
+              } else if (result.code === 'GAME_DURATION_TOO_SHORT') {
+
+                alert(`Match duration too short. Minimum duration is 30 seconds.`)
+
+              } else {
+
+                console.error("Erro ao salvar pontos:", result.error || result)
+
+              }
+
+            }
 
           } catch (err) {
 

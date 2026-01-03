@@ -285,6 +285,8 @@ export function GameScreen({
   const molesAppearedRef = useRef(0) // Track total moles (normal + golden) that appeared
   const goldenMoleScheduledRef = useRef(false)
   const nextAnimalShouldBeGoldenRef = useRef(false)
+  const gameStartTimeRef = useRef<number | null>(null) // Track when game started (for duration validation)
+  const gameCompletedRef = useRef(false) // Track if game was completed to the end
 
   const holeCount = DIFFICULTY_HOLES[difficulty]
   const timerRef = useRef<NodeJS.Timeout | undefined>(undefined)
@@ -455,6 +457,8 @@ export function GameScreen({
     setIsPaused(false)
     isPausedRef.current = false
     setShowPauseDialog(false)
+    gameStartTimeRef.current = Date.now() // Track game start time
+    gameCompletedRef.current = false // Reset completion flag
 
     setTimeout(() => {
       showNextAnimal()
@@ -569,6 +573,7 @@ export function GameScreen({
         
         gameActiveRef.current = false
         setGameActive(false)
+        gameCompletedRef.current = true // Mark game as completed to the end
 
         if (animalTimerRef.current) clearTimeout(animalTimerRef.current)
         if (nextAnimalTimerRef.current) clearTimeout(nextAnimalTimerRef.current)
@@ -578,6 +583,8 @@ export function GameScreen({
           score: scoreRef.current,
           goldenMolesHit,
           errors: errorsRef.current,
+          gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : GAME_DURATION,
+          completed: true,
         })
         console.log("✅ onGameComplete called")
         
@@ -823,15 +830,18 @@ export function GameScreen({
                   setShowPauseDialog(false)
                   gameActiveRef.current = false
                   setGameActive(false)
+                  gameCompletedRef.current = false // Mark as not completed (quit mid-game)
                   
                   if (animalTimerRef.current) clearTimeout(animalTimerRef.current)
                   if (nextAnimalTimerRef.current) clearTimeout(nextAnimalTimerRef.current)
                   
-                  // Complete game with current stats
+                  // Complete game with current stats (but mark as not completed)
                   onGameComplete({
                     score: scoreRef.current,
                     goldenMolesHit,
                     errors: errorsRef.current,
+                    gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0,
+                    completed: false, // Game was quit, not completed to the end
                   })
                   
                   // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar

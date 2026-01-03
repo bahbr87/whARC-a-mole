@@ -84,8 +84,8 @@ export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: Cre
       return
     }
 
-    if (creditAmount > 1000000) {
-      setError("Maximum 1,000,000 credits per purchase")
+    if (creditAmount > 5000) {
+      setError("Maximum 5,000 credits per purchase")
       return
     }
 
@@ -116,7 +116,7 @@ export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: Cre
     }
   }
 
-  const cost = (parseInt(amount) || 0) * 0.00001 // 0.00001 USDC per credit
+  const cost = (parseInt(amount) || 0) * 0.005 // 0.005 USDC per credit (1000 credits = 5 USDC)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,7 +124,7 @@ export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: Cre
         <DialogHeader>
           <DialogTitle>Purchase Credits</DialogTitle>
           <DialogDescription>
-            Buy credits to play the game. Each click costs 1 credit (0.00001 USDC).
+            Buy credits to play the game. Each click costs 1 credit (0.005 USDC). 1000 credits = 5 USDC.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -134,13 +134,13 @@ export function CreditsPurchaseDialog({ open, onOpenChange, walletAddress }: Cre
               id="amount"
               type="number"
               min="1"
-              max="1000000"
+              max="5000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               disabled={isLoading}
             />
             <p className="text-sm text-muted-foreground mt-1">
-              Cost: {cost.toFixed(5)} USDC
+              Cost: {cost.toFixed(3)} USDC
             </p>
           </div>
           {error && (

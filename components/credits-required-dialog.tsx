@@ -83,7 +83,7 @@ export function CreditsRequiredDialog({ open, onOpenChange, onPurchaseCredits }:
             Credits Required
           </DialogTitle>
           <DialogDescription>
-            You need credits to play the game. Each click costs 1 credit (0.00001 USDC).
+            You need credits to play the game. Each click costs 1 credit (0.005 USDC). 1000 credits = 5 USDC.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">

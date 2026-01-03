@@ -13,12 +13,13 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract GameCredits is Ownable, ReentrancyGuard {
     IERC20 public usdcToken;
     
-    // Cost per click in USDC (6 decimals) - 0.00001 USDC = 10 (with 6 decimals)
-    uint256 public constant CLICK_COST = 10; // 0.00001 USDC per click
+    // Cost per click in USDC (6 decimals) - 0.005 USDC = 5000 (with 6 decimals)
+    uint256 public constant CLICK_COST = 5000; // 0.005 USDC per click
     
     // Price per credit (in USDC with 6 decimals)
-    // 1 credit = 1 click, so 1 credit = 0.00001 USDC
-    uint256 public constant CREDIT_PRICE = 10; // 0.00001 USDC per credit
+    // 1 credit = 1 click, so 1 credit = 0.005 USDC
+    // 1000 credits = 5 USDC
+    uint256 public constant CREDIT_PRICE = 5000; // 0.005 USDC per credit
     
     // Mapping: player => credit balance
     mapping(address => uint256) public credits;
@@ -80,7 +81,7 @@ contract GameCredits is Ownable, ReentrancyGuard {
      */
     function purchaseCredits(uint256 creditAmount) external nonReentrant {
         require(creditAmount > 0, "Credit amount must be greater than 0");
-        require(creditAmount <= 1000000, "Too many credits at once"); // Prevent abuse
+        require(creditAmount <= 5000, "Max 5000 credits per purchase"); // Prevent abuse
         
         uint256 totalCost = creditAmount * CREDIT_PRICE;
         
