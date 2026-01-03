@@ -1,5 +1,14 @@
 "use client"
 
+// ============================================================================
+// MAINTENANCE MODE — Disable to restore game
+// ============================================================================
+// Set GAME_DISABLED to true to show maintenance screen and block all game functionality.
+// Set GAME_DISABLED to false to restore normal game operation.
+// ============================================================================
+const GAME_DISABLED = true
+// ============================================================================
+
 import { useState, useCallback, useEffect } from "react"
 
 import { BrowserProvider, Contract } from "ethers"
@@ -64,7 +73,51 @@ export interface RankingEntry {
 
 
 
+// ============================================================================
+// Maintenance Screen Component
+// ============================================================================
+// Simple maintenance screen shown when GAME_DISABLED === true
+// ============================================================================
+function MaintenanceScreen() {
+  const handleReload = () => {
+    if (typeof window !== "undefined") {
+      window.location.reload()
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-amber-50 to-amber-100 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-lg border-4 border-amber-900 shadow-2xl p-8 text-center">
+        <h1 className="text-3xl font-bold text-amber-900 mb-6">
+          Game temporarily disabled for maintenance.
+        </h1>
+        <p className="text-lg text-amber-800 mb-8">
+          Please try again later.
+        </p>
+        <Button
+          onClick={handleReload}
+          className="w-full bg-gradient-to-r from-amber-500 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white font-bold text-lg py-6"
+        >
+          Reload page
+        </Button>
+      </div>
+    </div>
+  )
+}
+// ============================================================================
+
+
+
 function WharcAMoleContent() {
+  // ============================================================================
+  // MAINTENANCE MODE CHECK
+  // ============================================================================
+  // If game is disabled, show only maintenance screen and skip all game logic
+  // ============================================================================
+  if (GAME_DISABLED) {
+    return <MaintenanceScreen />
+  }
+  // ============================================================================
 
   const { sendUSDC, address: walletAddress } = useWallet()
 
