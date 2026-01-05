@@ -6,7 +6,7 @@
 // Set GAME_DISABLED to true to show maintenance screen and block all game functionality.
 // Set GAME_DISABLED to false to restore normal game operation.
 // ============================================================================
-const GAME_DISABLED = true
+const GAME_DISABLED = false
 // ============================================================================
 
 import { useState, useCallback, useEffect } from "react"
@@ -54,6 +54,8 @@ export interface GameSession {
   gameDuration?: number // Game duration in seconds
 
   completed?: boolean // Whether the game was completed to the end
+
+  events?: Array<{ holeId: number, animalType: "mole" | "cow" | "golden", timestamp: number }> // Events for backend score calculation
 
 }
 
@@ -359,15 +361,13 @@ function WharcAMoleContent() {
 
                 player: address, 
 
-                points: data.score,
-
-                golden_moles: data.goldenMolesHit,
-
-                errors: data.errors,
+                events: data.events || [], // Events for backend score calculation
 
                 game_duration: data.gameDuration || 30, // Game duration in seconds
 
-                completed: data.completed !== false // Default to true if not specified
+                completed: data.completed !== false, // Default to true if not specified
+
+                difficulty: difficulty // Difficulty level for point calculation
 
               })
 

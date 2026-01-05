@@ -5,9 +5,25 @@ import { supabaseAdmin } from '@/lib/supabase';
  * POST /api/saveMatch
  * Saves a match to Supabase matches table
  * 
+ * Expected payload:
+ * {
+ *   player: string,
+ *   events: Array<{ holeId: number, animalType: "mole" | "cow" | "golden", timestamp: number }>,
+ *   completed: boolean,
+ *   game_duration: number,
+ *   difficulty: "easy" | "medium" | "hard"
+ * }
+ * 
+ * Backend calculates:
+ * - points: based on events and difficulty
+ * - golden_moles: count of golden mole hits
+ * - errors: count of cow hits
+ * 
  * Fields saved:
  * - player: string (lowercase wallet address)
- * - points: number
+ * - points: number (calculated by backend)
+ * - golden_moles: number (calculated by backend)
+ * - errors: number (calculated by backend)
  * - timestamp: timestamp (auto-set by Supabase default)
  * 
  * Security validations:
@@ -34,6 +50,27 @@ const MIN_GAME_DURATION_SECONDS = 30; // Partida deve durar pelo menos 30 segund
 // Using conservative 5000 points as maximum
 const MAX_POINTS_PER_DAY = 5000; // Conservative maximum for hard difficulty * 9 matches
 
+// Point values per difficulty (same as frontend)
+type GameDifficulty = "easy" | "medium" | "hard";
+type AnimalType = "mole" | "cow" | "golden";
+
+const getPointsForDifficulty = (difficulty: GameDifficulty) => {
+  switch (difficulty) {
+    case "easy":
+      return { mole: 5, cow: -1, golden: 10 };
+    case "medium":
+      return { mole: 10, cow: -2, golden: 20 };
+    case "hard":
+      return { mole: 15, cow: -3, golden: 30 };
+  }
+};
+
+interface GameEvent {
+  holeId: number;
+  animalType: AnimalType;
+  timestamp: number;
+}
+
 export async function POST(req: Request) {
   try {
     // Validate Supabase configuration at runtime
@@ -41,12 +78,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }
 
-    const { player, points, golden_moles, errors, game_duration, completed } = await req.json();
+    const { player, events, game_duration, completed, difficulty } = await req.json();
 
     // Validate required fields
-    if (!player || points === undefined) {
-      return NextResponse.json({ error: 'Missing required fields: player and points' }, { status: 400 });
+    if (!player || !events || !Array.isArray(events)) {
+      return NextResponse.json({ error: 'Missing required fields: player and events' }, { status: 400 });
     }
+
+    if (!difficulty || !["easy", "medium", "hard"].includes(difficulty)) {
+      return NextResponse.json({ error: 'Missing or invalid difficulty field' }, { status: 400 });
+    }
+
+    // ============================================================================
+    // CALCULATE POINTS, GOLDEN_MOLES, AND ERRORS FROM EVENTS
+    // ============================================================================
+    
+    const pointsConfig = getPointsForDifficulty(difficulty as GameDifficulty);
+    let points = 0;
+    let golden_moles = 0;
+    let errors = 0;
+
+    for (const event of events as GameEvent[]) {
+      if (!event.animalType || !["mole", "cow", "golden"].includes(event.animalType)) {
+        console.warn(`[SAVE-MATCH] Invalid event animalType: ${event.animalType}, skipping`);
+        continue;
+      }
+
+      if (event.animalType === "golden") {
+        points += pointsConfig.golden;
+        golden_moles += 1;
+      } else if (event.animalType === "mole") {
+        points += pointsConfig.mole;
+      } else if (event.animalType === "cow") {
+        points += pointsConfig.cow; // This is negative
+        errors += 1;
+      }
+    }
+
+    // Ensure points cannot go below 0
+    points = Math.max(0, points);
+
+    console.log(`[SAVE-MATCH] Calculated from events: points=${points}, golden_moles=${golden_moles}, errors=${errors}, events_count=${events.length}`);
 
     // Normalize player to lowercase (for consistent grouping)
     const normalizedPlayer = player.toLowerCase();
@@ -110,7 +182,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Error validating golden moles limit' }, { status: 500 });
     }
 
-    const totalGoldenMolesToday = (todayMatchesWithGolden || []).reduce((sum, match) => sum + (match.golden_moles || 0), 0);
+    const totalGoldenMolesToday = (todayMatchesWithGolden || []).reduce((sum: number, match: any) => sum + (match.golden_moles || 0), 0);
     const newTotalGoldenMoles = totalGoldenMolesToday + (golden_moles || 0);
     
     if (newTotalGoldenMoles > MAX_GOLDEN_MOLES_PER_DAY) {
@@ -133,7 +205,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Error validating points limit' }, { status: 500 });
     }
 
-    const totalPointsToday = (todayMatchesPoints || []).reduce((sum, match) => sum + (match.points || 0), 0);
+    const totalPointsToday = (todayMatchesPoints || []).reduce((sum: number, match: any) => sum + (match.points || 0), 0);
     const newTotalPoints = totalPointsToday + points;
     
     if (newTotalPoints > MAX_POINTS_PER_DAY) {
