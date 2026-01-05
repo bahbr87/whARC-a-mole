@@ -62,6 +62,36 @@ contract PrizePool is Ownable {
         usdc.transfer(owner(), amount);
     }
 
+    /**
+     * @notice Owner can distribute prize to a winner (for backend claim processing)
+     * @dev Only owner can call this. Validates that user is a winner and hasn't claimed yet.
+     */
+    function distributePrize(uint256 day, address user) external onlyOwner {
+        require(!claimed[day][user], "Already claimed");
+
+        uint256 players = totalPlayers[day];
+        require(players > 0, "Day not finalized");
+
+        uint256 prize;
+        bool isWinner = false;
+
+        for (uint256 rank = 1; rank <= 3; rank++) {
+            if (winners[day][rank] == user) {
+                prize = getPrizeForRank(rank, players);
+                isWinner = true;
+                break;
+            }
+        }
+
+        require(isWinner, "Not a winner");
+        require(prize > 0, "No prize");
+
+        claimed[day][user] = true;
+        usdc.transfer(user, prize);
+
+        emit PrizeClaimed(day, user, prize);
+    }
+
     /* ========== VIEW ========== */
 
     function getWinner(uint256 day, uint256 rank)

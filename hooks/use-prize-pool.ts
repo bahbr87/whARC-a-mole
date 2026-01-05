@@ -15,7 +15,7 @@ const PRIZE_POOL_ABI = [
 ]
 
 // PrizePool contract address (mais recente)
-const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
 
 /**
  * Calculate days since epoch (Unix epoch: January 1, 1970)

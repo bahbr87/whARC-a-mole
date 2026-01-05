@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  */
 contract GameCredits is Ownable, ReentrancyGuard {
     IERC20 public usdcToken;
+    address public prizePoolAddress;
     
     // Cost per click in USDC (6 decimals) - 0.005 USDC = 5000 (with 6 decimals)
     uint256 public constant CLICK_COST = 5000; // 0.005 USDC per click
@@ -43,6 +44,14 @@ contract GameCredits is Ownable, ReentrancyGuard {
         uint256 totalCost
     );
     
+    event CreditsPurchasedWithPrizePool(
+        address indexed player,
+        uint256 usdcAmount,
+        uint256 creditsReceived,
+        uint256 totalCredits,
+        address prizePool
+    );
+    
     event CreditsConsumed(
         address indexed player,
         uint256 clickCount,
@@ -66,6 +75,15 @@ contract GameCredits is Ownable, ReentrancyGuard {
     constructor(address _usdcToken) Ownable(msg.sender) {
         require(_usdcToken != address(0), "Invalid USDC address");
         usdcToken = IERC20(_usdcToken);
+    }
+    
+    /**
+     * @dev Set the PrizePool address (owner only)
+     * @param _prizePoolAddress Address of the PrizePool contract
+     */
+    function setPrizePoolAddress(address _prizePoolAddress) external onlyOwner {
+        require(_prizePoolAddress != address(0), "Invalid PrizePool address");
+        prizePoolAddress = _prizePoolAddress;
     }
     
     /**
@@ -104,6 +122,60 @@ contract GameCredits is Ownable, ReentrancyGuard {
         totalRevenue += totalCost;
         
         emit CreditsPurchased(msg.sender, creditAmount, creditAmount, totalCost);
+    }
+    
+    /**
+     * @dev Purchase credits with USDC, transferring USDC directly to PrizePool
+     * @param creditAmount Number of credits to purchase
+     * 
+     * Requirements:
+     * - PrizePool address must be set
+     * - Player must have approved this contract to spend USDC
+     * - Player must have sufficient USDC balance
+     * - Credit amount must be between 1 and 5000
+     * 
+     * Security:
+     * - Uses nonReentrant modifier to prevent reentrancy attacks
+     * - Validates all inputs before state changes
+     * - Uses safe ERC20 transfer pattern
+     */
+    function purchaseCreditsWithPrizePool(uint256 creditAmount) external nonReentrant {
+        require(creditAmount > 0, "Credit amount must be greater than 0");
+        require(creditAmount <= 5000, "Max 5000 credits per purchase");
+        require(prizePoolAddress != address(0), "PrizePool address not set");
+        
+        // Calculate total cost in USDC (with 6 decimals)
+        uint256 totalCost = creditAmount * CREDIT_PRICE;
+        
+        // Check player's USDC balance
+        uint256 playerBalance = usdcToken.balanceOf(msg.sender);
+        require(playerBalance >= totalCost, "Insufficient USDC balance");
+        
+        // Check allowance (player must have approved this contract)
+        uint256 allowance = usdcToken.allowance(msg.sender, address(this));
+        require(allowance >= totalCost, "Insufficient USDC allowance");
+        
+        // Transfer USDC from player directly to PrizePool
+        // This is a critical operation - if it fails, the entire transaction reverts
+        require(
+            usdcToken.transferFrom(msg.sender, prizePoolAddress, totalCost),
+            "USDC transfer to PrizePool failed"
+        );
+        
+        // Update player's credit balance (only after successful USDC transfer)
+        uint256 previousCredits = credits[msg.sender];
+        credits[msg.sender] += creditAmount;
+        totalCreditsPurchased[msg.sender] += creditAmount;
+        uint256 newTotalCredits = credits[msg.sender];
+        
+        // Emit detailed event for tracking and frontend updates
+        emit CreditsPurchasedWithPrizePool(
+            msg.sender,
+            totalCost,
+            creditAmount,
+            newTotalCredits,
+            prizePoolAddress
+        );
     }
     
     /**

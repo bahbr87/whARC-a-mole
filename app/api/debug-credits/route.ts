@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Wallet, JsonRpcProvider, Contract } from "ethers"
 
-const GAME_CREDITS_ADDRESS = process.env.GAME_CREDITS_ADDRESS || "0xB6EF59882778d0A245202F1482f20f02ad82bd87"
+const GAME_CREDITS_ADDRESS = process.env.GAME_CREDITS_ADDRESS || process.env.NEXT_PUBLIC_GAME_CREDITS_ADDRESS || "0x531Ba20fB57fb9Efe6b8f5c7Cbf29248A7B3D5cF"
 const META_TRANSACTION_ADDRESS = process.env.META_TRANSACTION_ADDRESS || "0x0000000000000000000000000000000000000000"
 const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network"
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || "5042002")
