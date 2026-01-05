@@ -56,6 +56,13 @@ contract GameCredits is Ownable, ReentrancyGuard {
         uint256 usdcRefunded
     );
     
+    event CreditsMigrated(
+        address indexed player,
+        uint256 amount
+    );
+    
+    bool public migrationEnabled = true;
+    
     constructor(address _usdcToken) Ownable(msg.sender) {
         require(_usdcToken != address(0), "Invalid USDC address");
         usdcToken = IERC20(_usdcToken);
@@ -191,6 +198,48 @@ contract GameCredits is Ownable, ReentrancyGuard {
         );
         
         emit CreditsRefunded(msg.sender, creditAmount, usdcRefund);
+    }
+    
+    /**
+     * @dev Migrate credits from old system (owner only)
+     * Hard limit: 50,000 per player
+     */
+    function migrateCredits(address player, uint256 amount) external onlyOwner {
+        require(migrationEnabled, "Migration disabled");
+        require(player != address(0), "Invalid player");
+        require(amount > 0, "Invalid amount");
+        require(amount <= 50000, "Max 50k per player");
+
+        credits[player] += amount;
+        totalCreditsPurchased[player] += amount;
+
+        emit CreditsMigrated(player, amount);
+    }
+
+    /**
+     * @dev Permanently disable migration after done
+     */
+    function disableMigration() external onlyOwner {
+        migrationEnabled = false;
+    }
+
+    /**
+     * @dev Adjust player credits (owner only) - for fixing duplicate migrations
+     * @param player Address of the player
+     * @param adjustment Amount to adjust (positive to add, negative to subtract)
+     */
+    function adjustCredits(address player, int256 adjustment) external onlyOwner {
+        require(player != address(0), "Invalid player");
+        
+        if (adjustment > 0) {
+            credits[player] += uint256(adjustment);
+            totalCreditsPurchased[player] += uint256(adjustment);
+        } else if (adjustment < 0) {
+            uint256 deduction = uint256(-adjustment);
+            require(credits[player] >= deduction, "Insufficient credits to deduct");
+            credits[player] -= deduction;
+        }
+        // If adjustment == 0, do nothing
     }
 }
 

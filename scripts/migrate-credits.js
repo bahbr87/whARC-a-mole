@@ -1,0 +1,332 @@
+import { ethers } from "ethers";
+import * as fs from "fs";
+import * as path from "path";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.join(process.cwd(), ".env.local") });
+
+const OLD_CONTRACT = "0xB6EF59882778d0A245202F1482f20f02ad82bd87";
+const NEW_CONTRACT = "0x41Afb27763416f555207c9B0bB04F08E665b4AFd";
+const RPC_URL = "https://rpc.testnet.arc.network";
+const CHAIN_ID = 5042002;
+
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY;
+
+if (!DEPLOYER_PRIVATE_KEY) {
+  console.error("❌ DEPLOYER_PRIVATE_KEY or PRIVATE_KEY not found in .env.local");
+  process.exit(1);
+}
+
+async function main() {
+  const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
+  const wallet = new ethers.Wallet(DEPLOYER_PRIVATE_KEY, provider);
+
+  console.log("=".repeat(80));
+  console.log("MIGRANDO CRÉDITOS DO CONTRATO ANTIGO PARA O NOVO");
+  console.log("=".repeat(80));
+  console.log("👤 Owner:", wallet.address);
+  console.log("📦 Contrato Antigo:", OLD_CONTRACT);
+  console.log("✨ Contrato Novo:", NEW_CONTRACT);
+  console.log("=".repeat(80));
+
+  const oldAbi = [
+    "function credits(address) view returns (uint256)",
+  ];
+
+  const newAbi = [
+    "function migrateCredits(address player, uint256 amount) external",
+    "function migrationEnabled() view returns (bool)",
+  ];
+
+  const oldContract = new ethers.Contract(OLD_CONTRACT, oldAbi, wallet);
+  const newContract = new ethers.Contract(NEW_CONTRACT, newAbi, wallet);
+
+  // Verificar se migração está ativada
+  const migrationEnabled = await newContract.migrationEnabled();
+  if (!migrationEnabled) {
+    console.error("❌ Migração está desativada no novo contrato!");
+    process.exit(1);
+  }
+  console.log("✅ Migração está ativada\n");
+
+  // Lista de jogadores com saldo > 0 (do script list-credits.js)
+  // Ordenada por saldo (maior para menor)
+  const players = [
+    "0x937e1b6fe9080AbcD01A7bBa50e9B516Ec731532", // 2999990
+    "0x4d7855b5bEA3761129716dB8f7d85FEc646B84bc", // 2001969
+    "0x6307407C6B2f3137a1D014740803e2fB07De7733", // 1000980
+    "0xc3B1e2Ded0e5B2F8efe770367246f2692855f958", // 1000098
+    "0x9EC4665B7654b99A9CDb26c5BfEC92F338ec7A0C", // 499988
+    "0x57f05D6eBD8D5d1856d8f606c45656aE0900A0d7", // 300971
+    "0xF52B1F4c7Eb22C0C59D71d083c9F2C3D0465da0F", // 276013
+    "0x5B13A1Bd6aB0B7fB68C736Ff8401C29609E9b108", // 109986
+    "0x4062163054EC0F2847B82ccf969D7a0b8B516686", // 101000
+    "0x00d1E86040d88397F4eB187c38dC527F6659e486", // 100963
+    "0xD2173404556177C884E1cB7c22429ce6c50A734e", // 100921
+    "0xD9CCD2c607521E46457Af28bB642B7F7b6831923", // 99996
+    "0xcE879d34C0F0c1CC1e26712F76a2b756fdC5940d", // 51986
+    "0xB51158878a08a860443B10b2F24617bab5F1F3eA", // 31442
+    "0x3e09431BD5C20199809d83978f87b21df579bB26", // 11000
+    "0x165f6429FCF3721838f3C393776cF708f670a2Ca", // 10999
+    "0xe7B9E964C4265ab52C818331EB320518729C23e9", // 10999
+    "0xCFACB8097d9A547C0a62c23FD231Beeafa695392", // 10999
+    "0x10112D54A268C2dB7f2B1D2789282C325795A219", // 3988
+    "0x7A2F69d25dE46aEacB2a6e7bAd9D3AdD6d8052C2", // 3966
+    "0x67A8e843A13D500BC215bbffcf0e93131903932E", // 3766
+    "0x10E675D273fA3071e9B806b6999adc6e071e010d", // 2000
+    "0x5bA61CAB4550706cE0B008E1a92355293492cb0d", // 2000
+    "0xA2E7a3c57037a3092aa870e8296b21f8a8dD0F53", // 2000
+    "0xC1E5487d12a4FcEEaCcFbd9230A5f63A14B944fa", // 2000
+    "0xB123f7A274Ebf6Dbc846801433229909D70C886F", // 2000
+    "0x9ba27D2A93d2F56995277c05D2f1Ef123d345c99", // 2000
+    "0xa32c3fd6cc2DD234bC3F4EE9d4E0c5e08f5Cf4aB", // 1999
+    "0xCbE8518371e824D60cf03650470EDb3F6dd99F27", // 1998
+    "0x5D48048e843C3261f701c2CCF75ce13000631F73", // 1998
+    "0x0D90E16c8B38F497BAF5827fc3870A1eFc6f1f09", // 1997
+    "0xFa543fa99ad08009025F6F046c4C72713B47Dd87", // 1997
+    "0x3cC03DE0E587f2FF82416E5BD38505BEFa08C1AE", // 1995
+    "0x4d2b979b61f31F263A8C1E04D799baB3A6062777", // 1991
+    "0x9b660Ac1E88305B29E4a20bF8416602Ee77B71B1", // 1984
+    "0xbFce3efef23879826Fc4E04Ad551b93b29a3C2e1", // 1981
+    "0x4e4f80e36B0AC7C2A5dd495e1b9BBD657fd94295", // 1980
+    "0xf5b300FDCFA32b77087935923cB8cD71221601Fe", // 1979
+    "0x706489703F32dFC1bcD0862B9a1c881F1BDbcEbd", // 1975
+    "0x70dCa6Ee1FCf77A39f2114d42Be9e5F689Bf22e4", // 1974
+    "0xCf8D69EfAF33A87D953062dEaB7132620B7Ae700", // 1972
+    "0x21A00818f9179837C260E91473f6B2070Caf7941", // 1972
+    "0x650cCD684cAb88E05d1b4b5fF3627FA57EfE75E5", // 1951
+    "0x0C8AA570a1dfEEE5258F3c13e2e967da24Bbb505", // 1939
+    "0xB4B51506f6E5A188E7F733a5f704c8E69681433c", // 1922
+    "0x06Fb43d9Fe5F257c4A45dd57F39A6e967584AB1C", // 1907
+    "0x1719666c9A8BB5345bdAD08976A31D38c033F27E", // 1144
+    "0xcEF370093e5509bcA5E1e4c6661ee2EEa3f38187", // 1005
+    "0x08D16CE2f467d949889b70117ED0E7111128A83E", // 1004
+    "0x9845E1a47F926c2258De395D6A58b306e0bAeae6", // 1002
+    "0xC41e5E7804Cf89755eCe46F60346280a9a932239", // 1001
+    "0xE5c555933fCD9E231e25A3EB989a5395ebBC5665", // 1000
+    "0xF12BD23F179435169C4bfCCe7dA2a39F229CE9f0", // 1000
+    "0xa7BDbFb1517c547b1119BcA3aDc59075C2182831", // 1000
+    "0x47afDe22d6cA9ea3d49C07f398575dDD5304E338", // 1000
+    "0xD77937Ab7fEDcc316212B6dA8c5abc6D3660662E", // 1000
+    "0x7cC773e53aF893D433a48952CC95A167790cCD79", // 1000
+    "0xaF7982beD5AA40c204EF6FD4919e9632AC2371CA", // 1000
+    "0x91dddfCfdEB3653583877CB8fFa26562D69699aF", // 1000
+    "0x060d9d928c9Ff31185d909C8FaACEdc0783100e0", // 1000
+    "0x56c0CECb40e07306b1C49B90a798d3D91a17d5E3", // 1000
+    "0x6AEB8be41fC9E1B65f70AA01c61290B6F1dCB0BF", // 1000
+    "0x9aaD41c278c1aB7D539340CE182f78571F655d0f", // 1000
+    "0x00E25eF09842E22E24346756B04B5e6389417b22", // 1000
+    "0x26ebF543B006972bC986537C46D93d766f6cc2ca", // 1000
+    "0x4eD152ed7AeBa553523A76f09Bd2A707988D987F", // 1000
+    "0x53AA1779616fe00dCF730F82Ec5378ef9a94D51B", // 1000
+    "0x3cC285E72B0efD4D397311f8D17F3688E243DaC7", // 1000
+    "0x96C6e66c27aca594DD51a07C60f0E0f8716ec427", // 1000
+    "0x8520246e4E994bCCC1B976FE97451E9f18CaE70e", // 1000
+    "0x1fAB2514B339Fb5De59491c7879F399185bb23eA", // 1000
+    "0x182f7Dc1b3Ceecd0f0927914Ac57F1af3118Fa9D", // 1000
+    "0xc19A4361A93611E2B37e9967d488205566C6c967", // 1000
+    "0xB982d94E62BFd21C7F7C6e6f8d6b0Ea229407EcB", // 1000
+    "0x66eC906cc7e98CD16A54C0DfFaC27bB9F4B0f57e", // 1000
+    "0x248818e18974E0AA53A1A5DA53F08aF459Ae3E05", // 1000
+    "0x77B68a20699C5bb14fa0E6E54FF08F88d8270E66", // 1000
+    "0x974CC5f88Dc9B1AE6a429A34070440B532cf2b63", // 1000
+    "0x2130D4070D9893ecDED942F2A0dE08949831D0fA", // 999
+    "0x03b6A83e6caab0A181Be67d4933250f5aB0C818d", // 999
+    "0x3FD81897F239Fffb6841b10a309Ba1f1607CFd11", // 999
+    "0x5072d09Eef7828CA7A0b9Ec6C568B942b6f9328d", // 997
+    "0xa6f2e373Bbb3979b3E223B0b176B82D8C2a1c8DB", // 997
+    "0xc1F69170B9bc49cB5677652bC25A6D41f4525455", // 996
+    "0x4c003552B2434FEC71eec983d8a08f80F9c1C227", // 996
+    "0x59Df592c07235CB60eb739b0bC2F6587dfDA0338", // 996
+    "0x05abc2eFB0E8B540e68957DDb2f1Aa674db2Bcc7", // 996
+    "0x5c046706a1562770ffFEb5F495A7cBcea526aC74", // 995
+    "0x15B037597512Ea7B17e691399a7edB924E8a3225", // 994
+    "0xA96415F18A0D5f31Cc28A00ba43b304d5Ec43EfA", // 994
+    "0x9d49c9A74f329de1Fd021b4476641c06bb7a190A", // 993
+    "0x313C5659b54168793525e21bF267CF7E1f3FA563", // 993
+    "0x3Af4B365845410CEcbfC6B7Ae3F10d29818F786d", // 993
+    "0xFCf6C9B48bFcee5E1c9984F0aD2c3E84a5aF73F3", // 993
+    "0x42f2416fa3f943eb8a0495992aD869997e8833eA", // 993
+    "0x0361dA34732f6FE6DA5b96C4274e1eCAC25b055d", // 992
+    "0x29372Ac35a59E66d702a23EB9aFF808520B7a593", // 992
+    "0xBE4b63dD7DB08B10C2Cd527b53C842B4f466af56", // 992
+    "0x3068B0041d5634A7C1cF84274F261671BD343C63", // 992
+    "0x24f7b34B1155389e64Ad123bEC4d12f9F3E76EdC", // 991
+    "0x3846f87B1CD6dBfaE6595079b80C6f054177ac9D", // 991
+    "0xf28e8F9aEFDF2fB09C0426cba688FEc0077D151d", // 991
+    "0xA306De9E98DC0b67b9F340550913E2987B7899ac", // 990
+    "0x017Ce59FA8232E448A43529FfCA4aD81345b33b2", // 990
+    "0x4efF5e8eB71A8A6F2D657Df747310313E73DC699", // 990
+    "0x4d790a99426C7Be8A7bbEbD04D364930A70fDa10", // 990
+    "0x26f157d21DCa435f4DF163775d2500b47ef4bCF6", // 989
+    "0xb08e203bd6F8202a2Ded8EF837737dcfada895D7", // 989
+    "0xe087c5dC3B787A5E805A110ad24585960221eF64", // 989
+    "0x101E145568E6b719Ee60844C3A065090AEB2261C", // 989
+    "0x491267A719803d5103255325912d5cAE2f1D0095", // 989
+    "0x1182eaF4Dd35fF09Bd545b7A4D0860fefe887084", // 988
+    "0x7ce249e6687992B00b6E40FD21f49B25Ba53f38B", // 988
+    "0xF7E62DB00b20DdcB8f4B2Df69CBfd49A62B93e7b", // 988
+    "0xAF0a1902c6d2d4B765A91aCcF28eb02B4F28F535", // 988
+    "0xC8a299BD39cbb430877c9012F31c4AC3044eA619", // 987
+    "0x55B1502019E621490F5698ecCe4a46e8F0326C01", // 987
+    "0xF804e6916ae281CE4bAca290233D3eECF8839bFc", // 987
+    "0x776aE7647dE46D901B1845516f63343b526EABe5", // 987
+    "0xAEA721f1d4f0e075B6967B57c7e7d85a2C70ea8A", // 987
+    "0xFf986d2960535680cB4a4dDd8fb8528bfeEcFCC9", // 986
+    "0xf420b3eCD7d9D4B014f40B45D4870Ccba0Aede8b", // 986
+    "0x0e8F982d3FDB18092d6CC7956d16272e86a050eF", // 986
+    "0xEf199528ae35EDf32bc50D4B4bdbf56976098b9F", // 986
+    "0x66fF5119e63Fe50e8eebF4F29d9ccEF232981120", // 986
+    "0x75dDcC8916bDaED029A41C7A7a1819309d3DDc1C", // 986
+    "0x1Deeb8990005576720351B9D6543853FAD28707c", // 986
+    "0xea19fDa71Cf24dC077e0bCdB2A1ae05A49D4Cb6d", // 985
+    "0xAd00e45E78f0f96851605187DED7d377cf3569B3", // 985
+    "0x6eBA2cb7B4496015380104F947Def45c4C4a518C", // 985
+    "0xD7918eeF62b066674Da7bD9bF3Fc8e0DE3697274", // 985
+    "0x1d9b404Eb57452A3D806F5D62C85D818f01C3fb4", // 985
+    "0xcB8818E89b96b69B1c3D4303E6E7A87C5Ad1f51A", // 984
+    "0x06F57e6d6e01d5D76De21F893984b3E052238246", // 983
+    "0x9Df50aD6ff415265390F0602b5e43FD2C8F2279E", // 983
+    "0x8a8785D781e527Dcb2B9955aaDa241C61D4125FE", // 982
+    "0xfeac9124584B7bf5594da18013eff902f16C6e74", // 982
+    "0x4D6f114D2275C9c44D9e72b6fB5C5095E8278A02", // 982
+    "0xb7bc75a1F8a76415f88C7AD24c654f451b08a5B5", // 981
+    "0x152c7dfe671BA325a16E069e7dDd614725C282B0", // 981
+    "0xA2B935b237bA4f18DbeEfFe48489F165824B0c6e", // 980
+    "0xBe96fB12585Bd1cd2822Ae451A69eA5E8970806F", // 978
+    "0xf53D04D869E9108f882DBB1E0858624521989221", // 975
+    "0xe7610A9a1e7D01a8Da99EC0685EB4535aF070a99", // 974
+    "0x61DE3BaFB84EE7640c1645aACFE80c105384B79f", // 974
+    "0x0B64D88Fe2081a11fe588E61140d83Bef307756D", // 973
+    "0xd454dd6e2Dca8BdDe20785d2Ce9d55ACB1Ad262D", // 973
+    "0xfA3bE3bebFb42faDFa39753C83D3Aa045F299650", // 972
+    "0xB93276D62cbd8319e5E75DC4CCDf972E041AE9dE", // 970
+    "0x7cB342bdeC85eca50917b41Fea1c743B4935De70", // 970
+    "0xD2f932C03fA44F905cc01270797F3307a6338c2b", // 961
+    "0xD50D0f41dd217a0966dca6383E734f409cBC1A94", // 961
+    "0x2fe136c3Ae7037B5FeB1fEAFf77F9e84A3E23D6e", // 945
+    "0xE59d2c5e77e7731B7Ac878cE44E530B335a64AFd", // 939
+    "0x385941E84bCA6f8716572F91B7cA0E9ffAC56876", // 936
+    "0xDe96e75c7160d70a447a72AFdb75DDfA1455c808", // 930
+    "0xfb31Ca2a12fc6cE9D7CFC799fe32D3a9A9cFeBBE", // 907
+    "0x7F56911916dCe5498166e8E609a8201caaBeE39B", // 897
+    "0x3Da2b0cB7B5C50EE5017Fa05fcc74b2f28f54Cd1", // 894
+    "0xa10FA60128593D28F4565a36Df5A7C9e1992552A", // 859
+    "0x41da1A627f723760601a2812230996f2714CA403", // 850
+    "0x205B5a5D708Bd1FeFd07BEc4453485C467aCe75d", // 842
+    "0xA54ea238c6C35379E55043a770ce9d116D2430C4", // 689
+    "0xA070c6506091ca6bA6ac8b2a16fcFaf629254B63", // 499
+    "0xe6Aec81c485C0139B08F71aa1A26504DA5aF61E4", // 495
+    "0x5a19346034A958182930e4bb0e13aAB1DaEfA447", // 366
+    "0x22a50C19c1bA9Fe72Eb28a77a49fdd69C3349F54", // 215
+    "0xdA24acCb6ac2AE255c16327DB93c8A8E12eD41f4", // 193
+    "0xCCe3AdA5314481DB76709Fa69A67166e9434a3B3", // 100
+    "0x24167893e6981f121C26627444A5e6695E2f20d0", // 92
+    "0xe01e6298e7B80D90675B337D263061D7Bd2188b5", // 90
+    "0xD4B14E0642908Ca8628B151bB7faA27B1E8B83A6", // 90
+    "0xCBA7Ff2932Db07d7E1735a84C8fe2113D8f6C7f3", // 86
+    "0x897089Db1353B871efdBd3107B2E6369f662D712", // 57
+    "0x2aa2133f0259D01B54489b83f6e0c8Fa93060e8D", // 52
+    "0x576395BEdD8Fb9Eeb515Ced98347A0a56f5e1597", // 38
+    "0x75DDBF70868330544616a8D9727BA55C3cB6AD17", // 30
+    "0x2a0e1De3035bb8e837EC74e96934897Ff36f766B", // 11
+    "0x53c6a3EA6C92a75e233aB1C5C5D8a6551961Cd1F", // 10
+    "0xAE2B9c55024CC2CdF7A8E9695eB5c7080Bf6E3bc", // 10
+    "0xc980E3729DDae79a5074B8f21Bf2d47796fF01fd", // 10
+    "0x20E085f0E3f6efA8594E5cEd7c0c1c3a4EF6326e", // 10
+    "0x7868DF444fc3402AaE9292910540df1a23E69EE4", // 10
+    "0x652F7D5586709116405909688Ba1E0F455a68112", // 10
+    "0x1D52CF3c3D99a30589E5B5B290811d5E16e2D9fD", // 10
+    "0xF0c57371a0fadA587fD1291AC7a4F838EF61A61e", // 10
+    "0xec038d357ADdA789cd378A7c070FbCfFbC37b56E", // 10
+    "0x5C6619709C7aB39DE482C05E9D18CAE4e44D4820", // 10
+    "0xeaB64397d57a46E0bfbD69706e6bEDB9486f0E2D", // 9
+    "0xa684bF9A344db329Bdbc8272ee85457db26536ec", // 8
+    "0x0FF91a024919944D73D2117EF5e11Bc67f2Ce71b", // 8
+    "0xC130B8Bee30219c89E430AdCd17226A8d4c8Fe56", // 6
+    "0x3143039d6642f31BCd912CC8E557c2969c7119Ab", // 3
+    "0xf948daFe15258c470b6B44e9F7c74c4020D62266", // 1
+    "0x5acCa2EaC7163739ea795257694A294dC1c0Bc9d", // 1
+    "0x1d428b349277eE4402234Ea768Bc885fC3b98346", // 1
+    "0xdCb8243F7A4239b4816eb89F6F3Acb31Cb9ff15C", // 1
+    "0x9b9f3597CBe318fcD80ac1d844ea89929F5EE757", // 1
+    "0x948377dAd514b3Fe2fFfbae0eF189aed21aC4554", // 1
+    "0x86e7d0C1a72A9900e9636F9FF5E291af55B2CBED", // 1
+    "0x1C6B85be7B55D62205aE7e7A24456a459352731c", // 1
+    "0xF46f179aD48E5F2a69f35F95040D9AB3A224a321", // 1
+    "0x159f37078dd206735aAAa7456E16FF8B47Fc1afb", // 1
+    "0x8147511F0810d26b5E76f5aa70Cadab624eA4dF4", // 1
+    "0xE3A3e81e6A163db718AC45C38b7A8ccA0aAe364f", // 1
+    "0xDc131fdd1D07120AAF0172DB25Ca296dfa1d048F", // 1
+  ];
+
+  console.log(`📋 Total de jogadores na lista: ${players.length}\n`);
+
+  let totalMigrated = 0n;
+  let successCount = 0;
+  let errorCount = 0;
+  const errors = [];
+
+  for (let i = 0; i < players.length; i++) {
+    const player = players[i];
+    
+    try {
+      // Verificar saldo no contrato antigo
+      const bal = await oldContract.credits(player);
+
+      if (bal > 0n) {
+        // Limitar a 50.000 por chamada (limite do contrato)
+        const migrateAmount = bal > 50000n ? 50000n : bal;
+
+        console.log(`[${i + 1}/${players.length}] Migrando ${migrateAmount} créditos para ${player}...`);
+
+        const tx = await newContract.migrateCredits(player, migrateAmount);
+        console.log(`   ⏳ Transação enviada: ${tx.hash}`);
+        
+        await tx.wait();
+        console.log(`   ✅ Migração confirmada!`);
+
+        totalMigrated += migrateAmount;
+        successCount++;
+
+        // Se o saldo for maior que 50k, precisará de múltiplas migrações
+        if (bal > 50000n) {
+          console.log(`   ⚠️  ATENÇÃO: Este jogador tem ${bal} créditos. Apenas ${migrateAmount} foram migrados.`);
+          console.log(`   ⚠️  Será necessário migrar novamente para completar.`);
+        }
+
+        // Pequeno delay para evitar rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        console.log(`[${i + 1}/${players.length}] ⏭️  ${player} - Sem saldo, pulando...`);
+      }
+    } catch (error) {
+      errorCount++;
+      const errorMsg = `❌ Erro ao migrar ${player}: ${error.message}`;
+      console.error(errorMsg);
+      errors.push({ player, error: error.message });
+    }
+  }
+
+  console.log("\n" + "=".repeat(80));
+  console.log("📊 RESUMO DA MIGRAÇÃO");
+  console.log("=".repeat(80));
+  console.log(`✅ Migrações bem-sucedidas: ${successCount}`);
+  console.log(`❌ Erros: ${errorCount}`);
+  console.log(`💰 Total de créditos migrados: ${totalMigrated.toString()}`);
+  
+  if (errors.length > 0) {
+    console.log("\n❌ Erros encontrados:");
+    errors.forEach(({ player, error }) => {
+      console.log(`   ${player}: ${error}`);
+    });
+  }
+  
+  console.log("=".repeat(80));
+}
+
+main().catch((error) => {
+  console.error("❌ Erro fatal:", error);
+  process.exit(1);
+});
+

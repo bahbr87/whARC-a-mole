@@ -23,7 +23,7 @@ export default {
     arc: {
       url: "https://rpc.testnet.arc.network",
       chainId: 5042002, // Arc Testnet
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      accounts: process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY] : [],
     },
   },
   paths: {

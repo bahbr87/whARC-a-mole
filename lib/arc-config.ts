@@ -74,4 +74,8 @@ export const ERC20_ABI = [
 
 // GameCredits Contract Address
 // Can be overridden with NEXT_PUBLIC_GAME_CREDITS_ADDRESS environment variable
-export const GAME_CREDITS_ADDRESS = process.env.NEXT_PUBLIC_GAME_CREDITS_ADDRESS || "0xB6EF59882778d0A245202F1482f20f02ad82bd87"
+export const GAME_CREDITS_ADDRESS = process.env.NEXT_PUBLIC_GAME_CREDITS_ADDRESS || "0x548eE0ACBF88fBc5f30CFD4Ee1324282EAf9814D"
+
+// OLD GAME CREDITS CONTRACT (players still have credits here)
+// DO NOT DELETE
+// 0xB6EF59882778d0A245202F1482f20f02ad82bd87
