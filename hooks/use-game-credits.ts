@@ -8,14 +8,17 @@ import { USDC_CONTRACT_ADDRESS, ERC20_ABI, GAME_CREDITS_ADDRESS as GAME_CREDITS_
 // GameCredits ABI - includes events
 const GAME_CREDITS_ABI = [
   "function purchaseCredits(uint256 creditAmount) external",
+  "function purchaseCreditsWithPrizePool(uint256 creditAmount) external",
   "function consumeCreditsSelf(uint256 clickCount) external",
   "function getCredits(address player) external view returns (uint256)",
   "function calculatePurchaseCost(uint256 creditAmount) external pure returns (uint256)",
   "function credits(address) external view returns (uint256)",
   "function CREDIT_PRICE() external pure returns (uint256)",
   "function CLICK_COST() external pure returns (uint256)",
+  "function prizePoolAddress() external view returns (address)",
   // Events
   "event CreditsPurchased(address indexed player, uint256 amount, uint256 creditsReceived, uint256 totalCost)",
+  "event CreditsPurchasedWithPrizePool(address indexed player, uint256 usdcAmount, uint256 creditsReceived, uint256 totalCredits, address indexed prizePool)",
   "event CreditsConsumed(address indexed player, uint256 clickCount, uint256 creditsUsed, uint256 remainingCredits)",
 ] as const
 
@@ -180,7 +183,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         return
       }
 
-      // Listen for CreditsPurchased events for this player
+      // Listen for CreditsPurchased events for this player (old function)
       const filterPurchased = contract.filters.CreditsPurchased(walletAddress)
       const listenerPurchased = (player: string, amount: bigint, creditsReceived: bigint, totalCost: bigint) => {
         console.log("📢 CreditsPurchased event:", { player, amount: amount.toString(), creditsReceived: creditsReceived.toString() })
@@ -188,6 +191,21 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         refreshCredits()
       }
       contract.on(filterPurchased, listenerPurchased)
+
+      // Listen for CreditsPurchasedWithPrizePool events for this player (new function)
+      const filterPurchasedWithPrizePool = contract.filters.CreditsPurchasedWithPrizePool(walletAddress)
+      const listenerPurchasedWithPrizePool = (player: string, usdcAmount: bigint, creditsReceived: bigint, totalCredits: bigint, prizePool: string) => {
+        console.log("📢 CreditsPurchasedWithPrizePool event:", { 
+          player, 
+          usdcAmount: usdcAmount.toString(), 
+          creditsReceived: creditsReceived.toString(),
+          totalCredits: totalCredits.toString(),
+          prizePool
+        })
+        // Refresh balance from contract after event
+        refreshCredits()
+      }
+      contract.on(filterPurchasedWithPrizePool, listenerPurchasedWithPrizePool)
 
       // Listen for CreditsConsumed events for this player
       const filterConsumed = contract.filters.CreditsConsumed(walletAddress)
@@ -201,6 +219,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
       // Store cleanup functions
       eventListenersRef.current.push(() => {
         contract.off(filterPurchased, listenerPurchased)
+        contract.off(filterPurchasedWithPrizePool, listenerPurchasedWithPrizePool)
         contract.off(filterConsumed, listenerConsumed)
       })
     } catch (error: any) {
@@ -209,8 +228,13 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
   }, [walletAddress, getProviderAndContract, refreshCredits])
 
   // Purchase credits - wait for tx.wait() before updating UI
+  // Uses purchaseCreditsWithPrizePool to send USDC directly to PrizePool
   const purchaseCredits = useCallback(
     async (amount: number) => {
+      console.log("🛒 [purchaseCredits] Starting purchase process...")
+      console.log("🛒 [purchaseCredits] Amount:", amount)
+      console.log("🛒 [purchaseCredits] GameCredits Address:", GAME_CREDITS_ADDRESS)
+
       if (GAME_CREDITS_ADDRESS === "0x0000000000000000000000000000000000000000") {
         throw new Error("GameCredits contract not deployed")
       }
@@ -229,6 +253,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
 
         // Use walletAddress directly (source of truth from GameScreen)
         const currentAddress = walletAddress
+        console.log("🛒 [purchaseCredits] Player address:", currentAddress)
 
         const currentProvider = new BrowserProvider(window.ethereum)
         const signer = await currentProvider.getSigner()
@@ -240,6 +265,20 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         if (Number(network.chainId) !== expectedChainId) {
           throw new Error(`Wrong network. Please switch to Arc Testnet (Chain ID: ${expectedChainId})`)
         }
+        console.log("✅ [purchaseCredits] Network verified:", Number(network.chainId))
+
+        // Initialize contract
+        const contract = new Contract(GAME_CREDITS_ADDRESS, GAME_CREDITS_ABI, signer)
+        
+        // ✅ CRITICAL: Check if PrizePool address is configured
+        console.log("🔍 [purchaseCredits] Checking PrizePool address configuration...")
+        const prizePoolAddress = await contract.prizePoolAddress()
+        console.log("🔍 [purchaseCredits] PrizePool address:", prizePoolAddress)
+        
+        if (!prizePoolAddress || prizePoolAddress === "0x0000000000000000000000000000000000000000") {
+          throw new Error("PrizePool address not configured in contract. Please contact support.")
+        }
+        console.log("✅ [purchaseCredits] PrizePool address verified:", prizePoolAddress)
         
         // Check USDC balance - read decimals dynamically from contract
         const USDC_ABI = [
@@ -250,6 +289,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         ]
         const usdcContract = new Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, signer)
         
+        console.log("🔍 [purchaseCredits] Checking USDC balance...")
         // ✅ All contract values are BigInt
         const balanceRaw: bigint = await usdcContract.balanceOf(currentAddress)
         const decimalsRaw = await usdcContract.decimals()
@@ -259,6 +299,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         
         // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
         const balanceAmount = Number(balanceRaw) / (10 ** decimals)
+        console.log("💰 [purchaseCredits] USDC balance:", balanceAmount, "USDC (raw:", balanceRaw.toString(), ")")
         
         if (balanceAmount === 0) {
           throw new Error(`No USDC found. You need USDC tokens (contract: ${USDC_CONTRACT_ADDRESS}) to purchase credits.`)
@@ -266,22 +307,29 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         
         // Calculate cost - contract returns BigInt
         // ✅ Convert amount to BigInt explicitly to avoid type mixing issues
-        const contract = new Contract(GAME_CREDITS_ADDRESS, GAME_CREDITS_ABI, signer)
+        console.log("🔍 [purchaseCredits] Calculating purchase cost...")
         const costRaw: bigint = await contract.calculatePurchaseCost(BigInt(amount))
         
         // ✅ Convert to Number ONLY for UI/error messages (after all BigInt comparisons)
         const costAmount = Number(costRaw) / (10 ** decimals)
+        console.log("💰 [purchaseCredits] Purchase cost:", costAmount, "USDC (raw:", costRaw.toString(), ")")
+        console.log("💰 [purchaseCredits] Credits to receive:", amount)
         
         // ✅ Check if user has enough USDC - comparison between BigInt only
         if (balanceRaw < costRaw) {
           throw new Error(`Insufficient USDC balance. You have ${balanceAmount.toFixed(decimals)} USDC but need ${costAmount.toFixed(decimals)} USDC.`)
         }
+        console.log("✅ [purchaseCredits] USDC balance sufficient")
 
         // Check and approve USDC spending - contract returns BigInt
+        console.log("🔍 [purchaseCredits] Checking USDC allowance...")
         const allowanceRaw: bigint = await usdcContract.allowance(currentAddress, GAME_CREDITS_ADDRESS)
+        const allowanceAmount = Number(allowanceRaw) / (10 ** decimals)
+        console.log("🔍 [purchaseCredits] Current allowance:", allowanceAmount, "USDC (raw:", allowanceRaw.toString(), ")")
 
         // ✅ Comparison between BigInt only
         if (allowanceRaw < costRaw) {
+          console.log("⚠️ [purchaseCredits] Insufficient allowance, requesting approval...")
           // Approve 1000 USDC (using the decimals from contract)
           // Calculate 10^decimals using multiplication (decimals is already Number)
           let decimalsMultiplier = BigInt(1)
@@ -289,29 +337,44 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
             decimalsMultiplier = decimalsMultiplier * BigInt(10)
           }
           const approveAmount = BigInt(1000) * decimalsMultiplier
+          console.log("📝 [purchaseCredits] Requesting approval for:", Number(approveAmount) / (10 ** decimals), "USDC")
           const approveTx = await usdcContract.approve(GAME_CREDITS_ADDRESS, approveAmount)
+          console.log("⏳ [purchaseCredits] Approval transaction sent, waiting for confirmation...")
           const approveReceipt = await approveTx.wait()
           
           if (!approveReceipt || approveReceipt.status !== 1) {
             throw new Error("USDC approval failed. Please try again.")
           }
+          console.log("✅ [purchaseCredits] USDC approval confirmed")
+        } else {
+          console.log("✅ [purchaseCredits] USDC allowance sufficient")
         }
 
-        // Purchase credits
+        // Get current credit balance before purchase
+        const previousBalance = await readCreditsFromContract(currentAddress)
+        console.log("📊 [purchaseCredits] Current credit balance:", previousBalance)
+
+        // Purchase credits using purchaseCreditsWithPrizePool
+        // This sends USDC directly to PrizePool and updates player's credit balance
+        console.log("🚀 [purchaseCredits] Calling purchaseCreditsWithPrizePool...")
+        console.log("🚀 [purchaseCredits] USDC will be sent to PrizePool:", prizePoolAddress)
         // ✅ Convert amount to BigInt explicitly to avoid type mixing issues
-        const tx = await contract.purchaseCredits(BigInt(amount))
+        const tx = await contract.purchaseCreditsWithPrizePool(BigInt(amount))
+        console.log("⏳ [purchaseCredits] Transaction sent, hash:", tx.hash)
         
         // CRITICAL: Wait for transaction to be mined before updating UI
+        console.log("⏳ [purchaseCredits] Waiting for transaction confirmation...")
         const receipt = await tx.wait()
         
         if (!receipt || receipt.status !== 1) {
           throw new Error("Transaction failed. Please try again.")
         }
+        console.log("✅ [purchaseCredits] Transaction confirmed in block:", receipt.blockNumber)
 
         // After tx.wait(), read balance DIRECTLY from contract (source of truth)
         // Don't rely on events or state - always read from contract
         // ✅ CORREÇÃO: Aumentar delay e tentar múltiplas vezes para garantir que o contrato foi atualizado
-        console.log("⏳ Waiting for contract state to update...")
+        console.log("⏳ [purchaseCredits] Waiting for contract state to update...")
         await new Promise(resolve => setTimeout(resolve, 2000)) // Aumentado para 2s
         
         // ✅ CORREÇÃO: Ler o saldo diretamente do contrato (fonte da verdade)
@@ -320,48 +383,43 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         let attempts = 0
         const maxAttempts = 5
         
-        // ✅ CORREÇÃO: Usar função de atualização do estado para obter o valor atual
-        let previousBalance = 0
-        setCredits(prev => {
-          previousBalance = prev
-          return prev
-        })
-        
         const expectedCredits = previousBalance + amount // Saldo esperado após compra
         
-        console.log(`🔄 Previous balance: ${previousBalance}, Amount purchased: ${amount}, Expected: ${expectedCredits}`)
-        console.log(`🔄 Attempt ${attempts + 1}: Current balance from contract: ${newBalance}`)
+        console.log(`🔄 [purchaseCredits] Previous balance: ${previousBalance}, Amount purchased: ${amount}, Expected: ${expectedCredits}`)
+        console.log(`🔄 [purchaseCredits] Attempt ${attempts + 1}: Current balance from contract: ${newBalance}`)
         
         // Se o saldo já está correto, não precisa tentar novamente
         if (newBalance >= expectedCredits) {
-          console.log("✅ Balance updated correctly on first try!")
+          console.log("✅ [purchaseCredits] Balance updated correctly on first try!")
         } else {
           // Tentar novamente algumas vezes (pode ser que o contrato ainda não tenha atualizado)
           while (attempts < maxAttempts && newBalance < expectedCredits) {
             attempts++
-            console.log(`🔄 Attempt ${attempts + 1}: Current balance from contract: ${newBalance}, Expected: ${expectedCredits}`)
+            console.log(`🔄 [purchaseCredits] Attempt ${attempts + 1}: Current balance from contract: ${newBalance}, Expected: ${expectedCredits}`)
             
             // Aguardar mais um pouco e tentar novamente
             await new Promise(resolve => setTimeout(resolve, 1000))
             newBalance = await readCreditsFromContract(currentAddress)
             
             if (newBalance >= expectedCredits) {
-              console.log("✅ Balance updated correctly!")
+              console.log("✅ [purchaseCredits] Balance updated correctly!")
               break
             }
           }
         }
         
         // ✅ CORREÇÃO: Sempre atualizar o estado com o valor do contrato (fonte da verdade)
-        console.log("✅ Final balance from contract:", newBalance)
+        console.log("✅ [purchaseCredits] Final balance from contract:", newBalance)
         setCredits(prev => {
-          console.log(`🔄 Updating credits state from ${prev} to ${newBalance}`)
+          console.log(`🔄 [purchaseCredits] Updating credits state from ${prev} to ${newBalance}`)
           return Number(newBalance)
         })
         
-        console.log("✅ Credits purchased. New balance from contract:", newBalance)
+        console.log("✅ [purchaseCredits] Credits purchased successfully!")
+        console.log("✅ [purchaseCredits] New balance from contract:", newBalance)
+        console.log("✅ [purchaseCredits] USDC was sent to PrizePool:", prizePoolAddress)
       } catch (error: any) {
-        console.error("Error purchasing credits:", error)
+        console.error("❌ [purchaseCredits] Error purchasing credits:", error)
         // Check if user rejected the transaction (code 4001)
         if (error?.code === 4001 || error?.message?.includes("rejected") || error?.message?.includes("denied") || error?.message?.includes("User rejected")) {
           const rejectionError = new Error("Transação rejeitada pelo usuário")
