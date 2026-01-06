@@ -334,31 +334,37 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       // ✅ NOVO: Verificar se o dia está finalizado no contrato (totalPlayers > 0)
       setCheckingFinalization(true)
+      setIsDayFinalized(false) // Reset to false initially
       try {
         if (typeof window !== "undefined" && window.ethereum) {
-          const { BrowserProvider, Contract } = await import("ethers")
-          const provider = new BrowserProvider(window.ethereum)
-          const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
-          
-          if (PRIZE_POOL_ADDRESS) {
-            const PRIZE_POOL_ABI = [
-              "function totalPlayers(uint256 day) view returns (uint256)",
-            ]
-            const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
-            const totalPlayers = await readContract.totalPlayers(selectedDay)
-            const finalized = totalPlayers > BigInt(0)
-            setIsDayFinalized(finalized)
-            console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} finalized status: ${finalized} (totalPlayers: ${totalPlayers.toString()})`)
-          } else {
-            console.warn(`[RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
+          try {
+            const { BrowserProvider, Contract } = await import("ethers")
+            const provider = new BrowserProvider(window.ethereum)
+            const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+            
+            if (PRIZE_POOL_ADDRESS && PRIZE_POOL_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+              const PRIZE_POOL_ABI = [
+                "function totalPlayers(uint256 day) view returns (uint256)",
+              ]
+              const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+              const totalPlayers = await readContract.totalPlayers(selectedDay)
+              const finalized = totalPlayers > BigInt(0)
+              setIsDayFinalized(finalized)
+              console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} finalized status: ${finalized} (totalPlayers: ${totalPlayers.toString()})`)
+            } else {
+              console.warn(`[RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
+              setIsDayFinalized(false)
+            }
+          } catch (contractErr: any) {
+            console.warn(`[RANKING-SCREEN] Error connecting to contract for finalization check:`, contractErr?.message || contractErr)
             setIsDayFinalized(false)
           }
         } else {
           console.warn(`[RANKING-SCREEN] Wallet not available, cannot check finalization`)
           setIsDayFinalized(false)
         }
-      } catch (err) {
-        console.error(`[RANKING-SCREEN] Error checking day finalization:`, err)
+      } catch (err: any) {
+        console.error(`[RANKING-SCREEN] Error checking day finalization:`, err?.message || err)
         setIsDayFinalized(false)
       } finally {
         setCheckingFinalization(false)
@@ -479,7 +485,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       currentPlayerLower: currentPlayerLower,
       selectedDay,
       todayDay,
-      isPastDay: checks.isPastDay,
+      isPastDay,
+      isDayFinalized,
       checks: checks,
       canClaim: canClaimResult,
       displayDate,
@@ -1163,7 +1170,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                             </Button>
                           ) : claimedRanks.includes(rank) ? (
                             <span className="text-xs text-gray-600">Prize already claimed</span>
-                          ) : !isDayFinalized && rank <= 3 && rowPlayer.toLowerCase() === currentPlayer?.toLowerCase() ? (
+                          ) : !isDayFinalized && rank <= 3 && row.player?.toLowerCase() === currentPlayer?.toLowerCase() ? (
                             <span className="text-xs text-amber-600">Claims will be available after the day is finalized (UTC)</span>
                           ) : null}
                         </td>
