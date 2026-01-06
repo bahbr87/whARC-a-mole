@@ -348,47 +348,88 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       setCheckingFinalization(true)
       setIsDayFinalized(false) // Reset to false initially
+      
+      // ✅ CORREÇÃO: Verificar finalização SEMPRE, mesmo sem wallet (usando provider público)
       try {
-        if (typeof window !== "undefined" && window.ethereum) {
-          try {
-            const { BrowserProvider, Contract } = await import("ethers")
-            const provider = new BrowserProvider(window.ethereum)
-            const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
-            
-            if (PRIZE_POOL_ADDRESS && PRIZE_POOL_ADDRESS !== "0x0000000000000000000000000000000000000000") {
-              const PRIZE_POOL_ABI = [
-                "function totalPlayers(uint256 day) view returns (uint256)",
-              ]
-              const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
-              
-              console.log(`🔍 [RANKING-SCREEN] Calling totalPlayers(${selectedDay}) on contract...`)
-              const totalPlayers = await readContract.totalPlayers(selectedDay)
-              const finalized = totalPlayers > BigInt(0)
-              setIsDayFinalized(finalized)
-              setDayForFinalization(selectedDay) // Store which day was checked
-              console.log(`🔍 [RANKING-SCREEN] ========================================`)
-              console.log(`🔍 [RANKING-SCREEN] FINALIZATION CHECK RESULT`)
-              console.log(`🔍 [RANKING-SCREEN] ========================================`)
-              console.log(`🔍 [RANKING-SCREEN] Day checked: ${selectedDay}`)
-              console.log(`🔍 [RANKING-SCREEN] totalPlayers: ${totalPlayers.toString()}`)
-              console.log(`🔍 [RANKING-SCREEN] isDayFinalized set to: ${finalized}`)
-              console.log(`🔍 [RANKING-SCREEN] dayForFinalization stored as: ${selectedDay}`)
-              console.log(`🔍 [RANKING-SCREEN] ========================================`)
-            } else {
-              console.warn(`[RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
-              setIsDayFinalized(false)
-            }
-          } catch (contractErr: any) {
-            console.warn(`[RANKING-SCREEN] Error connecting to contract for finalization check:`, contractErr?.message || contractErr)
-            setIsDayFinalized(false)
-          }
-        } else {
-          console.warn(`[RANKING-SCREEN] Wallet not available, cannot check finalization`)
+        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+        console.log(`🔍 [RANKING-SCREEN] PRIZE_POOL_ADDRESS: ${PRIZE_POOL_ADDRESS}`)
+        
+        if (!PRIZE_POOL_ADDRESS || PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
+          console.error(`❌ [RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
           setIsDayFinalized(false)
+          setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
+        } else {
+          // ✅ CORREÇÃO: Usar provider público se wallet não estiver disponível
+          let provider: any = null
+          
+          if (typeof window !== "undefined" && window.ethereum) {
+            try {
+              const { BrowserProvider } = await import("ethers")
+              provider = new BrowserProvider(window.ethereum)
+              console.log(`🔍 [RANKING-SCREEN] Using wallet provider for finalization check`)
+            } catch (walletErr: any) {
+              console.warn(`⚠️ [RANKING-SCREEN] Failed to create wallet provider, will try public RPC:`, walletErr?.message || walletErr)
+            }
+          }
+          
+          // Se não conseguiu criar provider da wallet, usar RPC público
+          if (!provider) {
+            try {
+              const { JsonRpcProvider } = await import("ethers")
+              const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || "https://rpc.testnet.arc.network"
+              const CHAIN_ID = 5042002
+              provider = new JsonRpcProvider(RPC_URL, CHAIN_ID)
+              console.log(`🔍 [RANKING-SCREEN] Using public RPC provider (${RPC_URL}) for finalization check`)
+            } catch (rpcErr: any) {
+              console.error(`❌ [RANKING-SCREEN] Failed to create RPC provider:`, rpcErr?.message || rpcErr)
+              setIsDayFinalized(false)
+              setDayForFinalization(selectedDay)
+              setCheckingFinalization(false)
+              return
+            }
+          }
+          
+          try {
+            const { Contract } = await import("ethers")
+            const PRIZE_POOL_ABI = [
+              "function totalPlayers(uint256 day) view returns (uint256)",
+            ]
+            const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+            
+            console.log(`🔍 [RANKING-SCREEN] Calling totalPlayers(${selectedDay}) on contract ${PRIZE_POOL_ADDRESS}...`)
+            const totalPlayers = await readContract.totalPlayers(selectedDay)
+            const finalized = totalPlayers > BigInt(0)
+            
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            console.log(`🔍 [RANKING-SCREEN] FINALIZATION CHECK RESULT`)
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            console.log(`🔍 [RANKING-SCREEN] Day checked: ${selectedDay}`)
+            console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}): ${totalPlayers.toString()}`)
+            console.log(`🔍 [RANKING-SCREEN] finalized (totalPlayers > 0): ${finalized}`)
+            console.log(`🔍 [RANKING-SCREEN] isDayFinalized set to: ${finalized}`)
+            console.log(`🔍 [RANKING-SCREEN] dayForFinalization stored as: ${selectedDay}`)
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            
+            setIsDayFinalized(finalized)
+            setDayForFinalization(selectedDay) // Store which day was checked
+          } catch (contractErr: any) {
+            console.error(`❌ [RANKING-SCREEN] Error calling contract for finalization check:`, {
+              error: contractErr?.message || contractErr,
+              code: contractErr?.code,
+              data: contractErr?.data,
+              stack: contractErr?.stack
+            })
+            setIsDayFinalized(false)
+            setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
+          }
         }
       } catch (err: any) {
-        console.error(`[RANKING-SCREEN] Error checking day finalization:`, err?.message || err)
+        console.error(`❌ [RANKING-SCREEN] Unexpected error checking day finalization:`, {
+          error: err?.message || err,
+          stack: err?.stack
+        })
         setIsDayFinalized(false)
+        setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
       } finally {
         setCheckingFinalization(false)
       }
