@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { ArrowLeft, Trophy, Star, Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -150,9 +151,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     console.log(`🔍 [RANKING-SCREEN] displayDate changed:`, {
       displayDate,
       selectedDate,
-      calculatedDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null,
-      todayDay: Math.floor(Date.now() / 86400000),
-      isPastDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) < Math.floor(Date.now() / 86400000) : false
+      calculatedDay: displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null,
+      todayDay: getDayId(),
+      isPastDay: displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) < getDayId() : false
     })
   }, [displayDate, selectedDate])
   
@@ -198,7 +199,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
       
       const dateObj = new Date(Date.UTC(year, month - 1, day))
-      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+      const selectedDay = getDayId(dateObj)
       
       if (isNaN(selectedDay)) {
         console.error(`[RANKING-SCREEN] Invalid selectedDay calculated: ${selectedDay} from date: ${date}`)
@@ -208,7 +209,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
       
-      const todayDay = Math.floor(Date.now() / 86400000)
+      const todayDay = getDayId()
       console.log(`[RANKING-SCREEN] Loading ranking for date: ${date}, day: ${selectedDay}, today: ${todayDay}`)
       
       const url = `/api/rankings?day=${selectedDay}`
@@ -333,8 +334,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       // O displayDate já foi atualizado no handleDateSelect antes de chamar loadRanking
       // Só atualizar se for uma chamada inicial (quando displayDate ainda é o valor padrão)
       // Isso evita que loadRanking sobrescreva o displayDate que foi setado no handleDateSelect
-      const currentDisplayDay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
-      const newDay = Math.floor(new Date(date + 'T00:00:00Z').getTime() / 86400000)
+      const currentDisplayDay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
+      const newDay = getDayId(new Date(date + 'T00:00:00Z'))
       
       // Só atualizar se os dias forem diferentes (não apenas as strings)
       if (currentDisplayDay !== newDay) {
@@ -388,8 +389,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     const dateObj = new Date(Date.UTC(year, month - 1, day))
-    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-    const todayDay = Math.floor(Date.now() / 86400000)
+    const selectedDay = getDayId(dateObj)
+    const todayDay = getDayId()
     const isPastDay = selectedDay < todayDay
     
     // 🔍 DIAGNÓSTICO: Log crítico do cálculo do dia
@@ -402,8 +403,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       difference: todayDay - selectedDay,
       dateObjTime: dateObj.getTime(),
       todayTime: Date.now(),
-      calculation: `Math.floor(${dateObj.getTime()} / 86400000) = ${selectedDay}`,
-      todayCalculation: `Math.floor(${Date.now()} / 86400000) = ${todayDay}`
+      calculation: `getDayId(${dateObj.toISOString()}) = ${selectedDay}`,
+      todayCalculation: `getDayId() = ${todayDay}`
     })
     
     const currentPlayerLower = (currentPlayer || '').toLowerCase().trim()
@@ -477,9 +478,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // Recalculate selectedDay from displayDate to ensure it's current
     // Store in outer scope so it's available in catch block
     const [year, month, day] = displayDate.split('-').map(Number)
-    const dateObj = new Date(Date.UTC(year, month - 1, day))
-    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-    const dateString = displayDate
+      const dateObj = new Date(Date.UTC(year, month - 1, day))
+      const selectedDay = getDayId(dateObj)
+      const dateString = displayDate
     let dbRegistrationSuccess = false
 
     try {
@@ -795,8 +796,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       // 🔍 DIAGNÓSTICO: Calcular day ID antes de atualizar
       const dateObj = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate()))
-      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-      const todayDay = Math.floor(Date.now() / 86400000)
+      const selectedDay = getDayId(dateObj)
+      const todayDay = getDayId()
       const isPastDay = selectedDay < todayDay
       
       console.log(`📅 [RANKING-SCREEN] Calendar date selected:`, {
@@ -1074,8 +1075,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     const rank = (currentPage - 1) * itemsPerPage + index + 1
 
                     // 🔍 DIAGNÓSTICO: Log detalhado para cada linha ANTES de chamar canClaim
-                    const selectedDayFromDisplay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
-                    const todayDayFromDisplay = Math.floor(Date.now() / 86400000)
+                    const selectedDayFromDisplay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
+                    const todayDayFromDisplay = getDayId()
                     const isPastDayFromDisplay = selectedDayFromDisplay !== null && selectedDayFromDisplay < todayDayFromDisplay
                     
                     console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}) - BEFORE canClaim:`, {

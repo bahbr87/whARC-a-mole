@@ -2,9 +2,10 @@
  * Convert a Date to days since epoch (UTC, start of day)
  * This is the format used by the PrizePool contract
  * 
- * 🎯 REGRA DE OURO: Use EXATAMENTE esta função em TODOS os lugares
- * (backend, frontend, scripts, admin)
+ * 🎯 REGRA DE OURO: Use getDayId() de @/utils/day em vez desta função
+ * Esta função é mantida apenas para compatibilidade com código legado
  * 
+ * @deprecated Use getDayId() from @/utils/day instead
  * @param date - Date object
  * @returns Number of days since January 1, 1970 00:00:00 UTC
  * 
@@ -12,7 +13,14 @@
  * getDaysSinceEpochUTC(new Date('2025-12-16')) // Returns 20073
  */
 export function getDayUTC(date = new Date()): number {
-  return Math.floor(date.getTime() / (1000 * 60 * 60 * 24))
+  // Use UTC midnight for consistency
+  const utc = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    0, 0, 0, 0
+  )
+  return Math.floor(utc / 86400000)
 }
 
 // Alias for backward compatibility
@@ -23,7 +31,7 @@ export function getDaysSinceEpochUTC(date: Date): number {
     date.getUTCDate(),
     0, 0, 0, 0
   )
-  return Math.floor(utc / (1000 * 60 * 60 * 24))
+  return Math.floor(utc / 86400000)
 }
 
 // Alias for backward compatibility

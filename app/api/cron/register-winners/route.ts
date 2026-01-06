@@ -140,7 +140,7 @@ async function findPendingDays(): Promise<number[]> {
 
     // Extrair dias únicos
     const daysWithMatches = new Set<number>()
-    const todayDay = Math.floor(Date.now() / 86400000)
+    const todayDay = getDayId()
 
     matches.forEach((match: any) => {
       let day: number
@@ -150,7 +150,7 @@ async function findPendingDays(): Promise<number[]> {
         day = match.day
       } else if (match.timestamp) {
         // Se não tem day, calcular do timestamp
-        day = Math.floor(new Date(match.timestamp).getTime() / 86400000)
+        day = getDayId(new Date(match.timestamp))
       } else {
         return // Pular se não tem nem day nem timestamp
       }

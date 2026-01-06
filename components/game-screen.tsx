@@ -11,6 +11,7 @@ import { useMetaTransactions } from "@/hooks/use-meta-transactions"
 import { useGameCredits } from "@/hooks/use-game-credits"
 import { CreditsPurchaseDialog } from "@/components/credits-purchase-dialog"
 import { CreditsRequiredDialog } from "@/components/credits-required-dialog"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -923,7 +924,7 @@ export function GameScreen({
             <Button
               onClick={() => {
                 playClickSound()
-                const today = Math.floor(Date.now() / 86400000)
+                const today = getDayId()
                 onViewRanking(today) // envia o dia correto para o ranking
               }}
               variant="outline"

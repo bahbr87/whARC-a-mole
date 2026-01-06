@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getDayId } from '@/utils/day';
 
 /**
  * POST /api/saveMatch
@@ -123,8 +124,8 @@ export async function POST(req: Request) {
     // Normalize player to lowercase (for consistent grouping)
     const normalizedPlayer = player.toLowerCase();
 
-    // Calculate day using the same formula as everywhere else: Math.floor(timestamp / 86400000)
-    const day = Math.floor(Date.now() / 86400000);
+    // Calculate day using UTC midnight for consistency
+    const day = getDayId();
 
     // ============================================================================
     // SECURITY VALIDATIONS
