@@ -171,7 +171,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [isDayFinalized, setIsDayFinalized] = useState<boolean>(false) // Track if day is finalized on contract
   const [checkingFinalization, setCheckingFinalization] = useState<boolean>(false) // Track loading state
   const [dayForFinalization, setDayForFinalization] = useState<number | null>(null) // Track which day was checked for finalization
-  const [finalizedDaysMap, setFinalizedDaysMap] = useState<Map<number, boolean>>(new Map()) // Map of day -> isFinalized
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
@@ -367,12 +366,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               const finalized = totalPlayers > BigInt(0)
               setIsDayFinalized(finalized)
               setDayForFinalization(selectedDay) // Store which day was checked
-              // ✅ NOVO: Armazenar no mapa para acesso rápido
-              setFinalizedDaysMap(prev => {
-                const newMap = new Map(prev)
-                newMap.set(selectedDay, finalized)
-                return newMap
-              })
               console.log(`🔍 [RANKING-SCREEN] ========================================`)
               console.log(`🔍 [RANKING-SCREEN] FINALIZATION CHECK RESULT`)
               console.log(`🔍 [RANKING-SCREEN] ========================================`)
@@ -380,7 +373,6 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
               console.log(`🔍 [RANKING-SCREEN] totalPlayers: ${totalPlayers.toString()}`)
               console.log(`🔍 [RANKING-SCREEN] isDayFinalized set to: ${finalized}`)
               console.log(`🔍 [RANKING-SCREEN] dayForFinalization stored as: ${selectedDay}`)
-              console.log(`🔍 [RANKING-SCREEN] finalizedDaysMap updated: day ${selectedDay} -> ${finalized}`)
               console.log(`🔍 [RANKING-SCREEN] ========================================`)
             } else {
               console.warn(`[RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
@@ -491,28 +483,12 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     const currentPlayerLower = (currentPlayer || '').toLowerCase().trim()
     const rowPlayerLower = (rowPlayer || '').toLowerCase().trim()
     
-    // ✅ CORREÇÃO: Verificar se o dia está finalizado
-    // Primeiro, tentar usar o mapa de dias finalizados
-    // Se não estiver no mapa, usar o valor do estado se o dia corresponder
-    // Caso contrário, assumir false (será verificado quando loadRanking for chamado)
-    let actualIsDayFinalized = false
+    // ✅ CORREÇÃO: Verificar se o dia está finalizado baseado no selectedDay
+    // Se selectedDay corresponde ao dayForFinalization, usar isDayFinalized do estado
+    // Caso contrário, assumir false (será verificado quando loadRanking for chamado para esse dia)
+    const actualIsDayFinalized = (selectedDay === dayForFinalization) ? isDayFinalized : false
     
-    if (finalizedDaysMap.has(selectedDay)) {
-      // ✅ Dia já foi verificado e está no mapa
-      actualIsDayFinalized = finalizedDaysMap.get(selectedDay) || false
-      console.log(`🔍 [RANKING-SCREEN] ✅ Found in finalizedDaysMap: day ${selectedDay} -> ${actualIsDayFinalized}`)
-    } else if (selectedDay === dayForFinalization) {
-      // ✅ Dia corresponde ao que foi verificado, usar estado
-      actualIsDayFinalized = isDayFinalized
-      console.log(`🔍 [RANKING-SCREEN] ✅ Days match! Using isDayFinalized from state: ${isDayFinalized}`)
-    } else {
-      // ⚠️ Dia não foi verificado ainda, assumir false
-      // loadRanking será chamado e verificará este dia
-      console.log(`🔍 [RANKING-SCREEN] ⚠️ Day ${selectedDay} not in map and doesn't match dayForFinalization (${dayForFinalization})`)
-      console.log(`🔍 [RANKING-SCREEN] ⚠️ Assuming false for now - will be checked when loadRanking is called`)
-      actualIsDayFinalized = false
-    }
-    
+    console.log(`🔍 [RANKING-SCREEN] actualIsDayFinalized: ${actualIsDayFinalized} (from state: ${isDayFinalized}, checked directly: ${selectedDay === dayForFinalization ? isDayFinalized : false})`)
     console.log(`🔍 [RANKING-SCREEN] ========================================`)
     
     // ✅ CORREÇÃO: Comparar rowPlayerLower com currentPlayerLower (ambos já em lowercase)
@@ -582,7 +558,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
     
     return canClaimResult
-  }, [displayDate, currentPlayer, claimedRanks, isDayFinalized, dayForFinalization, finalizedDaysMap])
+  }, [displayDate, currentPlayer, claimedRanks, isDayFinalized, dayForFinalization])
 
   // Handle prize claim
   // ✅ CORREÇÃO: Fluxo completo de claim
@@ -889,14 +865,14 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // Isso garante que isDayFinalized seja verificado para o dia correto
   useEffect(() => {
     if (displayDate) {
-      console.log(`🔍 [RANKING-SCREEN] displayDate changed, loading ranking for: ${displayDate}`)
+      console.log(`🔍 [RANKING-SCREEN] displayDate changed, checking if loadRanking needed for: ${displayDate}`)
       const selectedDay = getDayId(new Date(displayDate + 'T00:00:00Z'))
-      const dayInMap = finalizedDaysMap.has(selectedDay)
-      console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} in finalizedDaysMap: ${dayInMap}`)
+      const dayMatches = selectedDay === dayForFinalization
+      console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} matches dayForFinalization (${dayForFinalization}): ${dayMatches}`)
       
-      // Se o dia não está no mapa, carregar ranking (que verificará finalização)
-      if (!dayInMap) {
-        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} not in map, calling loadRanking...`)
+      // Se o dia não corresponde ao que foi verificado, carregar ranking (que verificará finalização)
+      if (!dayMatches) {
+        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} doesn't match, calling loadRanking...`)
         loadRanking(displayDate).catch((err) => {
           console.error(
             "[RANKING-SCREEN] loadRanking promise rejected inside displayDate useEffect:",
@@ -904,11 +880,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
           )
         })
       } else {
-        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} already in map, skipping loadRanking`)
+        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} already verified, skipping loadRanking`)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayDate])
+  }, [displayDate, dayForFinalization])
 
   // ✅ CORREÇÃO: Removido useMemo para 'rankings' - não é mais necessário
   // ANTES: rankings era um useMemo que mapeava ranking para um formato diferente
@@ -1272,9 +1248,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                           ) : claimedRanks.includes(rank) ? (
                             <span className="text-xs text-gray-600">Prize already claimed</span>
                           ) : (() => {
-                            // Verificar se o dia está finalizado usando o mapa
+                            // Verificar se o dia está finalizado baseado no selectedDay
                             const selectedDayFromDisplay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
-                            const dayIsFinalized = selectedDayFromDisplay !== null ? (finalizedDaysMap.get(selectedDayFromDisplay) || false) : false
+                            const dayIsFinalized = selectedDayFromDisplay !== null ? ((selectedDayFromDisplay === dayForFinalization) ? isDayFinalized : false) : false
                             const isCurrentPlayer = row.player?.toLowerCase() === currentPlayer?.toLowerCase()
                             
                             if (!dayIsFinalized && rank <= 3 && isCurrentPlayer) {
