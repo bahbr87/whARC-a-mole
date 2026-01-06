@@ -176,6 +176,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] LOADRANKING CALLED`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] Input date: "${date}"`)
+    
     setLoading(true)
     setError(null)
 
@@ -904,28 +909,33 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
 
   // ✅ NOVO: Garantir que loadRanking seja chamado quando displayDate mudar (via calendário)
   // Isso garante que isDayFinalized seja verificado para o dia correto
+  // ✅ CORREÇÃO: Sempre chamar loadRanking quando displayDate mudar, mesmo se o dia já foi verificado
+  // Isso garante que a verificação de finalização seja sempre executada
   useEffect(() => {
     if (displayDate) {
-      console.log(`🔍 [RANKING-SCREEN] displayDate changed, checking if loadRanking needed for: ${displayDate}`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] DISPLAYDATE CHANGED - useEffect triggered`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] displayDate: "${displayDate}"`)
       const selectedDay = getDayId(new Date(displayDate + 'T00:00:00Z'))
       const dayMatches = selectedDay === dayForFinalization
       console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} matches dayForFinalization (${dayForFinalization}): ${dayMatches}`)
+      console.log(`🔍 [RANKING-SCREEN] Current isDayFinalized state: ${isDayFinalized}`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
       
-      // Se o dia não corresponde ao que foi verificado, carregar ranking (que verificará finalização)
-      if (!dayMatches) {
-        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} doesn't match, calling loadRanking...`)
-        loadRanking(displayDate).catch((err) => {
-          console.error(
-            "[RANKING-SCREEN] loadRanking promise rejected inside displayDate useEffect:",
-            err
-          )
-        })
-      } else {
-        console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} already verified, skipping loadRanking`)
-      }
+      // ✅ CORREÇÃO: Sempre chamar loadRanking quando displayDate mudar
+      // Mesmo que o dia já tenha sido verificado, precisamos garantir que a verificação seja executada
+      // Isso resolve o problema de isDayFinalized estar false mesmo quando o dia foi verificado
+      console.log(`🔍 [RANKING-SCREEN] Calling loadRanking to verify finalization for day ${selectedDay}...`)
+      loadRanking(displayDate).catch((err) => {
+        console.error(
+          "❌ [RANKING-SCREEN] loadRanking promise rejected inside displayDate useEffect:",
+          err
+        )
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayDate, dayForFinalization])
+  }, [displayDate])
 
   // ✅ CORREÇÃO: Removido useMemo para 'rankings' - não é mais necessário
   // ANTES: rankings era um useMemo que mapeava ranking para um formato diferente
