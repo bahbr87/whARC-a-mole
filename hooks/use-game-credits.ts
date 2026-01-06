@@ -25,6 +25,14 @@ const GAME_CREDITS_ABI = [
 // GameCredits contract address (from arc-config.ts, can be overridden by env var)
 const GAME_CREDITS_ADDRESS = process.env.NEXT_PUBLIC_GAME_CREDITS_ADDRESS || GAME_CREDITS_ADDRESS_FROM_CONFIG || "0x0000000000000000000000000000000000000000"
 
+// Log contract address on module load (for debugging)
+if (typeof window !== "undefined") {
+  console.log("🔧 [useGameCredits] Contract address configuration:")
+  console.log("   NEXT_PUBLIC_GAME_CREDITS_ADDRESS:", process.env.NEXT_PUBLIC_GAME_CREDITS_ADDRESS || "NOT SET")
+  console.log("   GAME_CREDITS_ADDRESS_FROM_CONFIG:", GAME_CREDITS_ADDRESS_FROM_CONFIG)
+  console.log("   Final GAME_CREDITS_ADDRESS:", GAME_CREDITS_ADDRESS)
+}
+
 interface UseGameCreditsReturn {
   credits: number
   purchaseCredits: (amount: number) => Promise<void>
@@ -62,15 +70,17 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
 
   // Read balance DIRECTLY from contract - this is the source of truth
   const readCreditsFromContract = useCallback(async (playerAddress: string): Promise<number> => {
-    console.log("📖 readCreditsFromContract called for:", playerAddress)
+    console.log("📖 [readCreditsFromContract] Called for:", playerAddress)
+    console.log("📖 [readCreditsFromContract] Using contract:", GAME_CREDITS_ADDRESS)
     
     if (!playerAddress || playerAddress === "0x0000000000000000000000000000000000000000") {
-      console.log("❌ Invalid address")
+      console.log("❌ [readCreditsFromContract] Invalid address")
       return 0
     }
 
     if (GAME_CREDITS_ADDRESS === "0x0000000000000000000000000000000000000000") {
-      console.log("❌ GAME_CREDITS_ADDRESS is zero")
+      console.log("❌ [readCreditsFromContract] GAME_CREDITS_ADDRESS is zero")
+      console.log("❌ [readCreditsFromContract] Check NEXT_PUBLIC_GAME_CREDITS_ADDRESS in .env.local")
       return 0
     }
 
