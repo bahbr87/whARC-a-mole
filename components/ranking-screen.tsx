@@ -168,6 +168,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [claimedRanks, setClaimedRanks] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isDayFinalized, setIsDayFinalized] = useState<boolean>(false) // Track if day is finalized on contract
+  const [checkingFinalization, setCheckingFinalization] = useState<boolean>(false) // Track loading state
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
@@ -330,6 +332,38 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       console.log(`🔍 [RANKING-SCREEN] Setting claimedRanks:`, verifiedRanks)
       setClaimedRanks(verifiedRanks)
       
+      // ✅ NOVO: Verificar se o dia está finalizado no contrato (totalPlayers > 0)
+      setCheckingFinalization(true)
+      try {
+        if (typeof window !== "undefined" && window.ethereum) {
+          const { BrowserProvider, Contract } = await import("ethers")
+          const provider = new BrowserProvider(window.ethereum)
+          const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+          
+          if (PRIZE_POOL_ADDRESS) {
+            const PRIZE_POOL_ABI = [
+              "function totalPlayers(uint256 day) view returns (uint256)",
+            ]
+            const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+            const totalPlayers = await readContract.totalPlayers(selectedDay)
+            const finalized = totalPlayers > BigInt(0)
+            setIsDayFinalized(finalized)
+            console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} finalized status: ${finalized} (totalPlayers: ${totalPlayers.toString()})`)
+          } else {
+            console.warn(`[RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
+            setIsDayFinalized(false)
+          }
+        } else {
+          console.warn(`[RANKING-SCREEN] Wallet not available, cannot check finalization`)
+          setIsDayFinalized(false)
+        }
+      } catch (err) {
+        console.error(`[RANKING-SCREEN] Error checking day finalization:`, err)
+        setIsDayFinalized(false)
+      } finally {
+        setCheckingFinalization(false)
+      }
+      
       // ✅ CORREÇÃO: NÃO atualizar displayDate aqui se já foi atualizado no handleDateSelect
       // O displayDate já foi atualizado no handleDateSelect antes de chamar loadRanking
       // Só atualizar se for uma chamada inicial (quando displayDate ainda é o valor padrão)
@@ -400,6 +434,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       selectedDay,
       todayDay,
       isPastDay,
+      isDayFinalized,
       difference: todayDay - selectedDay,
       dateObjTime: dateObj.getTime(),
       todayTime: Date.now(),
@@ -414,10 +449,11 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // ANTES: rowPlayerLower === currentPlayer?.toLowerCase() (redundante e pode falhar)
     // AGORA: rowPlayerLower === currentPlayerLower (comparação direta e correta)
     // ✅ CORREÇÃO: Verificar rank <= 3 em vez de index < 3
+    // ✅ NOVO: Verificar se o dia está finalizado (totalPlayers > 0) em vez de apenas isPastDay
     
     // 🔍 DIAGNÓSTICO: Verificar cada condição separadamente
     const checks = {
-      isPastDay,
+      isDayFinalized, // ✅ NOVO: Dia deve estar finalizado no contrato
       hasCurrentPlayer: currentPlayerLower !== '',
       hasRowPlayer: rowPlayerLower !== '',
       playersMatch: rowPlayerLower === currentPlayerLower,
@@ -426,7 +462,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     const canClaimResult = (
-      checks.isPastDay &&
+      checks.isDayFinalized && // ✅ NOVO: Dia deve estar finalizado
       checks.hasCurrentPlayer &&
       checks.hasRowPlayer &&
       checks.playersMatch &&
@@ -453,7 +489,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // 🔍 DIAGNÓSTICO: Log de falhas específicas
     if (!canClaimResult) {
       const failures = []
-      if (!checks.isPastDay) failures.push('Day is not in the past')
+      if (!checks.isDayFinalized) failures.push('Day is not finalized on contract')
       if (!checks.hasCurrentPlayer) failures.push('No current player')
       if (!checks.hasRowPlayer) failures.push('No row player')
       if (!checks.playersMatch) failures.push('Players do not match')
@@ -463,7 +499,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
     
     return canClaimResult
-  }, [displayDate, currentPlayer, claimedRanks])
+  }, [displayDate, currentPlayer, claimedRanks, isDayFinalized])
 
   // Handle prize claim
   // ✅ CORREÇÃO: Fluxo completo de claim
@@ -1113,7 +1149,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         <td className="px-4 py-3 text-center">{row.errors ?? 0}</td>
                         <td className="px-4 py-3 text-center">
                           {/* ✅ CORREÇÃO: Passar rank diretamente para canClaim (agora recebe rank, não index) */}
-                          {canClaimResult ? (
+                          {checkingFinalization ? (
+                            <span className="text-xs text-gray-500">Checking...</span>
+                          ) : canClaimResult ? (
                             <Button
                               onClick={() => {
                                 console.log(`🔍 [RANKING-SCREEN] Claim button clicked for rank ${rank}`)
@@ -1124,7 +1162,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                               Claim prize
                             </Button>
                           ) : claimedRanks.includes(rank) ? (
-                            <span>Prize already claimed</span>
+                            <span className="text-xs text-gray-600">Prize already claimed</span>
+                          ) : !isDayFinalized && rank <= 3 && rowPlayer.toLowerCase() === currentPlayer?.toLowerCase() ? (
+                            <span className="text-xs text-amber-600">Claims will be available after the day is finalized (UTC)</span>
                           ) : null}
                         </td>
                       </tr>
