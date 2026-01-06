@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { getContractInstance } from "@/lib/contract";
 import { ethers } from "ethers";
 
 export async function GET(req: Request) {
@@ -31,18 +30,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { player } = await req.json();
-
-    if (!player) {
-      return new Response(
-        JSON.stringify({
-          error: "Missing player field",
-        }),
-        { status: 400 }
-      );
-    }
-
-    const normalizedPlayer = player.toLowerCase();
+    const { player, day, rank } = await req.json();
 
     // ============================================================================
     // CONFIGURATION
@@ -50,177 +38,205 @@ export async function POST(req: Request) {
     const RPC_URL = process.env.RPC_URL || process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network";
     const CHAIN_ID = 5042002;
     const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || process.env.PRIZE_POOL_CONTRACT_ADDRESS;
-    const OWNER_PRIVATE_KEY = process.env.OWNER_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY;
 
     if (!PRIZE_POOL_ADDRESS) {
       console.error("[CLAIM-PRIZE] ❌ PRIZE_POOL_ADDRESS not configured");
       return new Response(JSON.stringify({ error: "PrizePool contract not configured" }), { status: 500 });
     }
 
-    if (!OWNER_PRIVATE_KEY) {
-      console.error("[CLAIM-PRIZE] ❌ OWNER_PRIVATE_KEY not configured");
-      return new Response(JSON.stringify({ error: "Owner private key not configured" }), { status: 500 });
+    // ============================================================================
+    // VALIDATE INPUT - Player
+    // ============================================================================
+    if (!player) {
+      console.error("[CLAIM-PRIZE] ❌ Missing player field");
+      return new Response(JSON.stringify({ error: "Missing player field" }), { status: 400 });
+    }
+
+    // Normalize player address
+    const normalizedPlayer = player.toLowerCase();
+    
+    // Validate address format (basic check)
+    if (!/^0x[a-fA-F0-9]{40}$/.test(normalizedPlayer)) {
+      console.error("[CLAIM-PRIZE] ❌ Invalid player address format");
+      return new Response(JSON.stringify({ error: "Invalid player address format" }), { status: 400 });
     }
 
     // ============================================================================
-    // CONNECT TO BLOCKCHAIN
+    // VALIDATE INPUT - Day
+    // ============================================================================
+    if (day === undefined || day === null) {
+      console.error("[CLAIM-PRIZE] ❌ Missing day field");
+      return new Response(JSON.stringify({ error: "Missing day field" }), { status: 400 });
+    }
+
+    const claimableDay = parseInt(String(day), 10);
+    if (isNaN(claimableDay) || claimableDay < 0) {
+      console.error("[CLAIM-PRIZE] ❌ Invalid day format");
+      return new Response(JSON.stringify({ error: "Invalid day format" }), { status: 400 });
+    }
+
+    // ============================================================================
+    // VALIDATE INPUT - Rank
+    // ============================================================================
+    if (rank === undefined || rank === null) {
+      console.error("[CLAIM-PRIZE] ❌ Missing rank field");
+      return new Response(JSON.stringify({ error: "Missing rank field" }), { status: 400 });
+    }
+
+    const claimableRank = parseInt(String(rank), 10);
+    if (isNaN(claimableRank) || claimableRank < 1 || claimableRank > 3) {
+      console.error("[CLAIM-PRIZE] ❌ Invalid rank format (must be 1, 2, or 3)");
+      return new Response(JSON.stringify({ error: "Invalid rank format (must be 1, 2, or 3)" }), { status: 400 });
+    }
+
+    console.log(`[CLAIM-PRIZE] 🔍 Validating claim request:`);
+    console.log(`   Player: ${normalizedPlayer}`);
+    console.log(`   Day: ${claimableDay}`);
+    console.log(`   Rank: ${claimableRank}`);
+
+    // ============================================================================
+    // CONNECT TO BLOCKCHAIN (READ-ONLY)
     // ============================================================================
     const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
-    const wallet = new ethers.Wallet(OWNER_PRIVATE_KEY, provider);
-
-    console.log(`[CLAIM-PRIZE] 🔗 Connected to Arc Network`);
-    console.log(`[CLAIM-PRIZE] 👤 Owner address: ${wallet.address}`);
-    console.log(`[CLAIM-PRIZE] 🏆 PrizePool: ${PRIZE_POOL_ADDRESS}`);
-    console.log(`[CLAIM-PRIZE] 🎮 Player: ${normalizedPlayer}`);
-
-    // ============================================================================
-    // CHECK IF PLAYER CAN CLAIM PRIZE
-    // ============================================================================
     const PRIZE_POOL_ABI = [
       "function canClaim(uint256 day, address user) view returns (bool)",
-      "function getWinner(uint256 day, uint256 rank) view returns (address)",
-      "function getPrizeForRank(uint256 rank, uint256 players) view returns (uint256)",
-      "function totalPlayers(uint256 day) view returns (uint256)",
       "function claimed(uint256 day, address user) view returns (bool)",
-      "function usdc() view returns (address)",
+      "function getWinner(uint256 day, uint256 rank) view returns (address)",
+      "function totalPlayers(uint256 day) view returns (uint256)",
     ];
 
     const prizePoolContract = new ethers.Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider);
 
-    // Find which day and rank the player can claim
-    // We'll check recent days (last 30 days)
-    const currentDay = Math.floor(Date.now() / 86400000);
-    let claimableDay: number | null = null;
-    let claimableRank: number | null = null;
-    let prizeAmount: bigint = BigInt(0);
-
-    console.log(`[CLAIM-PRIZE] 🔍 Checking last 30 days for claimable prizes...`);
-
-    for (let day = currentDay; day >= currentDay - 30; day--) {
-      // Check if already claimed
-      const alreadyClaimed = await prizePoolContract.claimed(day, normalizedPlayer);
-      if (alreadyClaimed) {
-        continue;
-      }
-
-      // Check each rank (1, 2, 3)
-      for (let rank = 1; rank <= 3; rank++) {
-        const winner = await prizePoolContract.getWinner(day, rank);
-        if (winner.toLowerCase() === normalizedPlayer) {
-          const totalPlayers = await prizePoolContract.totalPlayers(day);
-          if (totalPlayers > BigInt(0)) {
-            const prize = await prizePoolContract.getPrizeForRank(rank, totalPlayers);
-            if (prize > BigInt(0)) {
-              claimableDay = day;
-              claimableRank = rank;
-              prizeAmount = prize;
-              console.log(`[CLAIM-PRIZE] ✅ Found claimable prize: day=${day}, rank=${rank}, amount=${prize.toString()}`);
-              break;
-            }
-          }
-        }
-      }
-      if (claimableDay !== null) break;
-    }
-
-    if (claimableDay === null || claimableRank === null || prizeAmount === BigInt(0)) {
-      console.log(`[CLAIM-PRIZE] ❌ No claimable prize found for player ${normalizedPlayer}`);
-      return new Response(JSON.stringify({ error: "No claimable prize found" }), { status: 404 });
-    }
-
-    // Check if already claimed in database
-    const { data: alreadyClaimedInDb } = await supabaseAdmin
+    // ============================================================================
+    // CHECK IF ALREADY CLAIMED IN DATABASE
+    // ============================================================================
+    const { data: existingClaim } = await supabaseAdmin
       .from("prizes_claimed")
       .select("*")
       .eq("day", claimableDay)
       .eq("rank", claimableRank)
-      .eq("player", normalizedPlayer);
+      .eq("player", normalizedPlayer)
+      .maybeSingle();
 
-    if (alreadyClaimedInDb && alreadyClaimedInDb.length > 0) {
-      console.log(`[CLAIM-PRIZE] ⚠️ Prize already claimed in database for day=${claimableDay}, rank=${claimableRank}`);
-      // Still allow if contract says it's not claimed (in case of database inconsistency)
+    if (existingClaim) {
+      console.log(`[CLAIM-PRIZE] ⚠️ Found existing claim record in database`);
+      
+      // Check on-chain status
       const isClaimedOnChain = await prizePoolContract.claimed(claimableDay, normalizedPlayer);
+      console.log(`[CLAIM-PRIZE]   On-chain claimed status: ${isClaimedOnChain}`);
+      
       if (isClaimedOnChain) {
-        return new Response(JSON.stringify({ error: "Prize already claimed" }), { status: 400 });
+        console.log(`[CLAIM-PRIZE] ❌ Prize already claimed on-chain`);
+        return new Response(JSON.stringify({ 
+          error: "Prize already claimed",
+          details: "This prize has already been claimed on the blockchain"
+        }), { status: 400 });
       }
-      // Remove stale database record
+      
+      // Remove stale database record (on-chain says not claimed, but DB has record)
+      console.log(`[CLAIM-PRIZE] 🗑️ Removing stale database record (on-chain not claimed)`);
       await supabaseAdmin
         .from("prizes_claimed")
         .delete()
         .eq("day", claimableDay)
         .eq("rank", claimableRank)
         .eq("player", normalizedPlayer);
-      console.log(`[CLAIM-PRIZE] 🗑️ Removed stale database record`);
     }
 
     // ============================================================================
-    // GET USDC CONTRACT ADDRESS
+    // VERIFY ON-CHAIN: canClaim(day, user)
     // ============================================================================
-    const usdcAddress = await prizePoolContract.usdc();
-    console.log(`[CLAIM-PRIZE] 💰 USDC contract: ${usdcAddress}`);
-
-    // ============================================================================
-    // TRANSFER USDC FROM PRIZEPOOL TO PLAYER
-    // ============================================================================
-    const ERC20_ABI = [
-      "function balanceOf(address account) view returns (uint256)",
-    ];
-
-    const usdcContract = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
-
-    // Check PrizePool balance
-    const prizePoolBalance = await usdcContract.balanceOf(PRIZE_POOL_ADDRESS);
-    console.log(`[CLAIM-PRIZE] 💰 PrizePool USDC balance: ${prizePoolBalance.toString()}`);
-
-    if (prizePoolBalance < prizeAmount) {
-      console.error(`[CLAIM-PRIZE] ❌ Insufficient balance in PrizePool. Required: ${prizeAmount.toString()}, Available: ${prizePoolBalance.toString()}`);
-      return new Response(JSON.stringify({ error: "Insufficient balance in PrizePool" }), { status: 500 });
+    console.log(`[CLAIM-PRIZE] 🔍 Checking canClaim(${claimableDay}, ${normalizedPlayer}) on contract...`);
+    
+    try {
+      const canClaim = await prizePoolContract.canClaim(claimableDay, normalizedPlayer);
+      console.log(`[CLAIM-PRIZE]   canClaim result: ${canClaim}`);
+      
+      if (!canClaim) {
+        // Additional checks to provide better error message
+        const isClaimed = await prizePoolContract.claimed(claimableDay, normalizedPlayer);
+        const totalPlayers = await prizePoolContract.totalPlayers(claimableDay);
+        
+        if (isClaimed) {
+          console.log(`[CLAIM-PRIZE] ❌ Prize already claimed on-chain`);
+          return new Response(JSON.stringify({ 
+            error: "Prize already claimed",
+            details: "This prize has already been claimed on the blockchain"
+          }), { status: 400 });
+        }
+        
+        if (totalPlayers === BigInt(0)) {
+          console.log(`[CLAIM-PRIZE] ❌ Day not finalized`);
+          return new Response(JSON.stringify({ 
+            error: "Day not finalized",
+            details: "This day has not been finalized yet. Winners must be registered first."
+          }), { status: 400 });
+        }
+        
+        // Check if user is actually a winner
+        let isWinner = false;
+        for (let checkRank = 1; checkRank <= 3; checkRank++) {
+          const winner = await prizePoolContract.getWinner(claimableDay, checkRank);
+          if (winner.toLowerCase() === normalizedPlayer) {
+            isWinner = true;
+            break;
+          }
+        }
+        
+        if (!isWinner) {
+          console.log(`[CLAIM-PRIZE] ❌ Player is not a winner for this day`);
+          return new Response(JSON.stringify({ 
+            error: "Not a winner",
+            details: "You are not a winner for this day"
+          }), { status: 400 });
+        }
+        
+        // If we get here, something unexpected happened
+        console.log(`[CLAIM-PRIZE] ❌ Cannot claim (unknown reason)`);
+        return new Response(JSON.stringify({ 
+          error: "Cannot claim prize",
+          details: "The contract indicates you cannot claim this prize. Please verify your eligibility."
+        }), { status: 400 });
+      }
+    } catch (contractError: any) {
+      console.error(`[CLAIM-PRIZE] ❌ Error checking canClaim:`, contractError);
+      return new Response(JSON.stringify({ 
+        error: "Contract verification failed",
+        details: contractError.message || "Failed to verify claim eligibility on contract"
+      }), { status: 500 });
     }
 
-    // Use PrizePool's distributePrize function to transfer directly from PrizePool to player
-    const PRIZE_POOL_DISTRIBUTE_ABI = [
-      "function distributePrize(uint256 day, address user) external",
-    ];
-    
-    const prizePoolWithSigner = new ethers.Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_DISTRIBUTE_ABI, wallet);
-    
-    console.log(`[CLAIM-PRIZE] 📤 Distributing prize from PrizePool to player ${normalizedPlayer}...`);
-    console.log(`[CLAIM-PRIZE]    Day: ${claimableDay}, Rank: ${claimableRank}, Amount: ${prizeAmount.toString()}`);
-    
-    const distributeTx = await prizePoolWithSigner.distributePrize(claimableDay, normalizedPlayer);
-    console.log(`[CLAIM-PRIZE] ⏳ Transaction sent: ${distributeTx.hash}`);
-
-    // Wait for transaction confirmation
-    const receipt = await distributeTx.wait();
-    console.log(`[CLAIM-PRIZE] ✅ Transaction confirmed in block ${receipt.blockNumber}`);
-    console.log(`[CLAIM-PRIZE] ✅ Prize transferred from PrizePool to player ${normalizedPlayer}`);
-
     // ============================================================================
-    // REGISTER CLAIM IN DATABASE (only after successful transfer)
+    // REGISTER CLAIM ATTEMPT IN DATABASE
     // ============================================================================
+    console.log(`[CLAIM-PRIZE] ✅ All validations passed. Registering claim attempt in database...`);
+    
     const { error: insertError } = await supabaseAdmin.from("prizes_claimed").insert({
       day: claimableDay,
       rank: claimableRank,
       player: normalizedPlayer,
-      claimed: true,
+      claimed: false, // Will be updated to true after successful contract transaction
       claimed_at: new Date().toISOString(),
     });
 
     if (insertError) {
       console.error("[CLAIM-PRIZE] ❌ Error inserting claim:", insertError);
-      // Transaction already succeeded, so we log but don't fail
-      console.warn("[CLAIM-PRIZE] ⚠️ Prize transferred but database registration failed");
-    } else {
-      console.log(`[CLAIM-PRIZE] ✅ Claim registered in database for day=${claimableDay}, rank=${claimableRank}, player=${normalizedPlayer}`);
+      return new Response(JSON.stringify({ 
+        error: "Database registration failed",
+        details: insertError.message 
+      }), { status: 500 });
     }
+
+    console.log(`[CLAIM-PRIZE] ✅ Claim attempt registered in database`);
+    console.log(`[CLAIM-PRIZE] ℹ️ Next step: Frontend should call prizePool.claim(${claimableDay}) via wallet`);
 
     return new Response(JSON.stringify({ 
       success: true,
       day: claimableDay,
       rank: claimableRank,
-      amount: prizeAmount.toString(),
-      transactionHash: distributeTx.hash,
-      message: "Prize transferred successfully from PrizePool"
+      player: normalizedPlayer,
+      message: "Validation successful. You can now claim the prize by calling prizePool.claim(day) in your wallet.",
+      nextStep: "Call prizePool.claim(day) via your connected wallet to complete the claim"
     }), { status: 200 });
   } catch (err: any) {
     console.error("[CLAIM-PRIZE] ❌ Unexpected error:", err);
