@@ -15,6 +15,7 @@
 
 import { JsonRpcProvider, Contract, Wallet, isAddress, getAddress } from "ethers"
 import { supabaseAdmin } from "@/lib/supabase"
+import { getDayId } from "@/utils/day"
 
 interface RankingEntry {
   player: string
@@ -30,16 +31,39 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 // O sistema foi migrado para Supabase, então precisamos buscar os dados da tabela matches
 async function loadRankings(): Promise<RankingEntry[]> {
   try {
-    // Buscar todas as matches do Supabase
-    const { data: matches, error } = await supabaseAdmin
-      .from("matches")
-      .select("player, points, golden_moles, errors, timestamp")
-      .order("timestamp", { ascending: true });
-
-    if (error) {
-      console.error("[REGISTER-WINNERS] Error fetching matches from Supabase:", error);
-      return [];
+    // Buscar todas as matches do Supabase (sem limite, mas Supabase pode limitar a 1000 por padrão)
+    // Vamos buscar em lotes se necessário
+    let allMatches: any[] = []
+    let from = 0
+    const pageSize = 1000
+    
+    while (true) {
+      const { data: matches, error } = await supabaseAdmin
+        .from("matches")
+        .select("player, points, golden_moles, errors, timestamp")
+        .order("timestamp", { ascending: true })
+        .range(from, from + pageSize - 1)
+      
+      if (error) {
+        console.error("[REGISTER-WINNERS] Error fetching matches from Supabase:", error);
+        break;
+      }
+      
+      if (!matches || matches.length === 0) {
+        break;
+      }
+      
+      allMatches = allMatches.concat(matches);
+      
+      // Se retornou menos que pageSize, chegamos ao fim
+      if (matches.length < pageSize) {
+        break;
+      }
+      
+      from += pageSize;
     }
+    
+    const matches = allMatches;
 
     if (!matches || matches.length === 0) {
       console.log("[REGISTER-WINNERS] No matches found in Supabase");
@@ -47,15 +71,68 @@ async function loadRankings(): Promise<RankingEntry[]> {
     }
 
     // Converter para o formato RankingEntry (usando points como score)
-    const rankings: RankingEntry[] = matches.map((match: any) => ({
-      player: match.player || "",
-      score: match.points || 0, // points do banco vira score
-      goldenMoles: match.golden_moles || 0,
-      errors: match.errors || 0,
-      timestamp: new Date(match.timestamp).getTime(), // Converter ISO string para timestamp
-    }));
+    const rankings: RankingEntry[] = []
+    let conversionErrors = 0
+    
+    matches.forEach((match: any, index: number) => {
+      try {
+        // Converter timestamp de forma segura (suporta formato Supabase)
+        let timestamp: number
+        if (typeof match.timestamp === "string") {
+          // Se for string, tentar converter com replace para formato ISO
+          // Formato Supabase: "2026-01-05T00:43:45.624+00:00" ou "2026-01-05 00:43:45.624+00"
+          let fixedTimestamp = match.timestamp
+          
+          // Substituir espaço por T se necessário
+          if (fixedTimestamp.includes(" ")) {
+            fixedTimestamp = fixedTimestamp.replace(" ", "T")
+          }
+          
+          // Substituir +00:00 ou +00 por Z (timezone UTC)
+          fixedTimestamp = fixedTimestamp.replace(/\+00:00$/, "Z").replace(/\+00$/, "Z")
+          
+          const date = new Date(fixedTimestamp)
+          if (isNaN(date.getTime())) {
+            console.warn(`[REGISTER-WINNERS] Invalid timestamp for match at index ${index}: ${match.timestamp} (fixed: ${fixedTimestamp})`)
+            conversionErrors++
+            return
+          }
+          timestamp = date.getTime()
+        } else {
+          timestamp = new Date(match.timestamp).getTime()
+          if (isNaN(timestamp)) {
+            console.warn(`[REGISTER-WINNERS] Invalid timestamp for match at index ${index}: ${match.timestamp}`)
+            conversionErrors++
+            return
+          }
+        }
 
-    console.log(`[REGISTER-WINNERS] Loaded ${rankings.length} matches from Supabase`);
+        rankings.push({
+          player: match.player || "",
+          score: match.points || 0, // points do banco vira score
+          goldenMoles: match.golden_moles || 0,
+          errors: match.errors || 0,
+          timestamp: timestamp,
+        })
+      } catch (error: any) {
+        console.warn(`[REGISTER-WINNERS] Error converting match at index ${index}:`, error.message)
+        conversionErrors++
+      }
+    })
+
+    console.log(`[REGISTER-WINNERS] Loaded ${rankings.length} matches from Supabase (${conversionErrors} conversion errors)`);
+    
+    // Log de exemplo dos primeiros matches para debug
+    if (rankings.length > 0) {
+      const sample = rankings.slice(0, 3)
+      console.log(`[REGISTER-WINNERS] Sample matches (first 3):`, sample.map(r => ({
+        player: r.player.substring(0, 10) + "...",
+        score: r.score,
+        timestamp: r.timestamp,
+        date: new Date(r.timestamp).toISOString()
+      })))
+    }
+    
     return rankings;
   } catch (error: any) {
     console.error("[REGISTER-WINNERS] Error loading rankings:", error);
@@ -69,9 +146,40 @@ function calculateDailyWinners(rankings: RankingEntry[], day: number): { winners
   const dayStartTimestamp = day * 86400000
   const dayEndTimestamp = dayStartTimestamp + 86400000 - 1
 
+  console.log(`[REGISTER-WINNERS] calculateDailyWinners for day ${day}:`)
+  console.log(`   Total rankings input: ${rankings.length}`)
+  console.log(`   Day range: ${dayStartTimestamp} (${new Date(dayStartTimestamp).toISOString()}) até ${dayEndTimestamp} (${new Date(dayEndTimestamp).toISOString()})`)
+
+  // Debug: verificar alguns timestamps para entender o problema
+  if (rankings.length > 0) {
+    const sampleTimestamps = rankings.slice(0, 5).map(r => ({
+      ts: r.timestamp,
+      date: new Date(r.timestamp).toISOString(),
+      calculatedDay: getDayId(new Date(r.timestamp))
+    }))
+    console.log(`   [DEBUG] Sample timestamps (first 5):`, sampleTimestamps)
+    
+    // Verificar se há matches do dia que estamos procurando
+    const matchesForTargetDay = rankings.filter(r => {
+      const rDay = getDayId(new Date(r.timestamp))
+      return rDay === day
+    })
+    console.log(`   [DEBUG] Matches with calculated day ${day}: ${matchesForTargetDay.length}`)
+    if (matchesForTargetDay.length > 0) {
+      console.log(`   [DEBUG] Example match for day ${day}:`, {
+        ts: matchesForTargetDay[0].timestamp,
+        date: new Date(matchesForTargetDay[0].timestamp).toISOString(),
+        inRange: matchesForTargetDay[0].timestamp >= dayStartTimestamp && matchesForTargetDay[0].timestamp <= dayEndTimestamp
+      })
+    }
+  }
+
   // Filter rankings for this specific day
   const dayRankings = rankings
-    .filter((entry) => entry.timestamp >= dayStartTimestamp && entry.timestamp <= dayEndTimestamp)
+    .filter((entry) => {
+      const inRange = entry.timestamp >= dayStartTimestamp && entry.timestamp <= dayEndTimestamp
+      return inRange
+    })
     .reduce((acc, entry) => {
       const existing = acc.get(entry.player)
       if (existing) {
@@ -89,6 +197,8 @@ function calculateDailyWinners(rankings: RankingEntry[], day: number): { winners
       }
       return acc
     }, new Map<string, RankingEntry>())
+
+  console.log(`   Matches in day range: ${dayRankings.size}`)
 
   // Sort by score, goldenMoles, errors
   const sorted = Array.from(dayRankings.values()).sort((a, b) => {

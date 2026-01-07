@@ -37,32 +37,92 @@ function getUTCDayEnd(date: Date): number {
 // O sistema foi migrado para Supabase, então precisamos buscar os dados da tabela matches
 async function loadRankings(): Promise<RankingEntry[]> {
   try {
-    // Buscar todas as matches do Supabase
-    const { data: matches, error } = await supabaseAdmin
-      .from("matches")
-      .select("player, points, golden_moles, errors, timestamp")
-      .order("timestamp", { ascending: true });
-
-    if (error) {
-      console.error("[REGISTER-WINNERS] Error fetching matches from Supabase:", error);
-      return [];
+    // Buscar todas as matches do Supabase (com paginação para evitar limite de 1000)
+    let allMatches: any[] = []
+    let from = 0
+    const pageSize = 1000
+    
+    while (true) {
+      const { data: matches, error } = await supabaseAdmin
+        .from("matches")
+        .select("player, points, golden_moles, errors, timestamp")
+        .order("timestamp", { ascending: true })
+        .range(from, from + pageSize - 1)
+      
+      if (error) {
+        console.error("[REGISTER-WINNERS] Error fetching matches from Supabase:", error);
+        break;
+      }
+      
+      if (!matches || matches.length === 0) {
+        break;
+      }
+      
+      allMatches = allMatches.concat(matches);
+      
+      // Se retornou menos que pageSize, chegamos ao fim
+      if (matches.length < pageSize) {
+        break;
+      }
+      
+      from += pageSize;
     }
 
-    if (!matches || matches.length === 0) {
+    if (allMatches.length === 0) {
       console.log("[REGISTER-WINNERS] No matches found in Supabase");
       return [];
     }
 
     // Converter para o formato RankingEntry (usando points como score)
-    const rankings: RankingEntry[] = matches.map((match: any) => ({
-      player: match.player || "",
-      score: match.points || 0, // points do banco vira score
-      goldenMoles: match.golden_moles || 0,
-      errors: match.errors || 0,
-      timestamp: new Date(match.timestamp).getTime(), // Converter ISO string para timestamp
-    }));
+    const rankings: RankingEntry[] = []
+    let conversionErrors = 0
+    
+    allMatches.forEach((match: any, index: number) => {
+      try {
+        // Converter timestamp de forma segura (suporta formato Supabase)
+        let timestamp: number
+        if (typeof match.timestamp === "string") {
+          // Formato Supabase: "2026-01-05T00:43:45.624+00:00" ou "2026-01-05 00:43:45.624+00"
+          let fixedTimestamp = match.timestamp
+          
+          // Substituir espaço por T se necessário
+          if (fixedTimestamp.includes(" ")) {
+            fixedTimestamp = fixedTimestamp.replace(" ", "T")
+          }
+          
+          // Substituir +00:00 ou +00 por Z (timezone UTC)
+          fixedTimestamp = fixedTimestamp.replace(/\+00:00$/, "Z").replace(/\+00$/, "Z")
+          
+          const date = new Date(fixedTimestamp)
+          if (isNaN(date.getTime())) {
+            console.warn(`[REGISTER-WINNERS] Invalid timestamp for match at index ${index}: ${match.timestamp}`)
+            conversionErrors++
+            return
+          }
+          timestamp = date.getTime()
+        } else {
+          timestamp = new Date(match.timestamp).getTime()
+          if (isNaN(timestamp)) {
+            console.warn(`[REGISTER-WINNERS] Invalid timestamp for match at index ${index}: ${match.timestamp}`)
+            conversionErrors++
+            return
+          }
+        }
 
-    console.log(`[REGISTER-WINNERS] Loaded ${rankings.length} matches from Supabase`);
+        rankings.push({
+          player: match.player || "",
+          score: match.points || 0, // points do banco vira score
+          goldenMoles: match.golden_moles || 0,
+          errors: match.errors || 0,
+          timestamp: timestamp,
+        })
+      } catch (error: any) {
+        console.warn(`[REGISTER-WINNERS] Error converting match at index ${index}:`, error.message)
+        conversionErrors++
+      }
+    })
+
+    console.log(`[REGISTER-WINNERS] Loaded ${rankings.length} matches from Supabase (${conversionErrors} conversion errors)`);
     return rankings;
   } catch (error) {
     console.error("[REGISTER-WINNERS] Error loading rankings:", error);
