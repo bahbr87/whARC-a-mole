@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { ArrowLeft, Trophy, Star, Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -150,9 +151,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     console.log(`🔍 [RANKING-SCREEN] displayDate changed:`, {
       displayDate,
       selectedDate,
-      calculatedDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null,
-      todayDay: Math.floor(Date.now() / 86400000),
-      isPastDay: displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) < Math.floor(Date.now() / 86400000) : false
+      calculatedDay: displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null,
+      todayDay: getDayId(),
+      isPastDay: displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) < getDayId() : false
     })
   }, [displayDate, selectedDate])
   
@@ -167,11 +168,19 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   const [claimedRanks, setClaimedRanks] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isDayFinalized, setIsDayFinalized] = useState<boolean>(false) // Track if day is finalized on contract
+  const [checkingFinalization, setCheckingFinalization] = useState<boolean>(false) // Track loading state
+  const [dayForFinalization, setDayForFinalization] = useState<number | null>(null) // Track which day was checked for finalization
   const itemsPerPage = 50
   const maxPages = 10 // 500 players / 50 per page
 
   // Function to load ranking for a specific date
   const loadRanking = useCallback(async (date: string) => {
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] LOADRANKING CALLED`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] Input date: "${date}"`)
+    
     setLoading(true)
     setError(null)
 
@@ -198,7 +207,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       }
       
       const dateObj = new Date(Date.UTC(year, month - 1, day))
-      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
+      const selectedDay = getDayId(dateObj)
       
       if (isNaN(selectedDay)) {
         console.error(`[RANKING-SCREEN] Invalid selectedDay calculated: ${selectedDay} from date: ${date}`)
@@ -208,7 +217,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
       
-      const todayDay = Math.floor(Date.now() / 86400000)
+      const todayDay = getDayId()
       console.log(`[RANKING-SCREEN] Loading ranking for date: ${date}, day: ${selectedDay}, today: ${todayDay}`)
       
       const url = `/api/rankings?day=${selectedDay}`
@@ -329,12 +338,119 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       console.log(`🔍 [RANKING-SCREEN] Setting claimedRanks:`, verifiedRanks)
       setClaimedRanks(verifiedRanks)
       
+      // ✅ NOVO: Verificar se o dia está finalizado no contrato (totalPlayers > 0)
+      // 🔍 DIAGNÓSTICO CRÍTICO: Verificar se estamos usando o mesmo selectedDay
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] CHECKING DAY FINALIZATION`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] Input date string: "${date}"`)
+      console.log(`🔍 [RANKING-SCREEN] Calculated selectedDay: ${selectedDay}`)
+      console.log(`🔍 [RANKING-SCREEN] selectedDay type: ${typeof selectedDay}`)
+      console.log(`🔍 [RANKING-SCREEN] selectedDay calculation: getDayId(new Date(Date.UTC(${year}, ${month - 1}, ${day})))`)
+      console.log(`🔍 [RANKING-SCREEN] dateObj.toISOString(): ${dateObj.toISOString()}`)
+      console.log(`🔍 [RANKING-SCREEN] Will check totalPlayers(${selectedDay}) on contract`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      
+      setCheckingFinalization(true)
+      setIsDayFinalized(false) // Reset to false initially
+      
+      // ✅ CORREÇÃO: Verificar finalização SEMPRE, mesmo sem wallet (usando provider público)
+      try {
+        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS
+        console.log(`🔍 [RANKING-SCREEN] PRIZE_POOL_ADDRESS: ${PRIZE_POOL_ADDRESS}`)
+        
+        if (!PRIZE_POOL_ADDRESS || PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
+          console.error(`❌ [RANKING-SCREEN] PRIZE_POOL_ADDRESS not configured, cannot check finalization`)
+          setIsDayFinalized(false)
+          setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
+        } else {
+          // ✅ CORREÇÃO: Usar provider público se wallet não estiver disponível
+          let provider: any = null
+          
+          if (typeof window !== "undefined" && window.ethereum) {
+            try {
+              const { BrowserProvider } = await import("ethers")
+              provider = new BrowserProvider(window.ethereum)
+              console.log(`🔍 [RANKING-SCREEN] Using wallet provider for finalization check`)
+            } catch (walletErr: any) {
+              console.warn(`⚠️ [RANKING-SCREEN] Failed to create wallet provider, will try public RPC:`, walletErr?.message || walletErr)
+            }
+          }
+          
+          // Se não conseguiu criar provider da wallet, usar RPC público
+          if (!provider) {
+            try {
+              const { JsonRpcProvider } = await import("ethers")
+              const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || "https://rpc.testnet.arc.network"
+              const CHAIN_ID = 5042002
+              provider = new JsonRpcProvider(RPC_URL, CHAIN_ID)
+              console.log(`🔍 [RANKING-SCREEN] Using public RPC provider (${RPC_URL}) for finalization check`)
+            } catch (rpcErr: any) {
+              console.error(`❌ [RANKING-SCREEN] Failed to create RPC provider:`, rpcErr?.message || rpcErr)
+              setIsDayFinalized(false)
+              setDayForFinalization(selectedDay)
+              setCheckingFinalization(false)
+              return
+            }
+          }
+          
+          try {
+            const { Contract } = await import("ethers")
+            const PRIZE_POOL_ABI = [
+              "function totalPlayers(uint256 day) view returns (uint256)",
+            ]
+            const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
+            
+            // ✅ REVERTIDO: Usar verificação original baseada em totalPlayers > 0
+            console.log(`🔍 [RANKING-SCREEN] Calling totalPlayers(${selectedDay}) on contract ${PRIZE_POOL_ADDRESS}...`)
+            const totalPlayers = await readContract.totalPlayers(selectedDay)
+            const finalized = totalPlayers > BigInt(0)
+            
+            // ✅ LOG: Identificar qual provider está sendo usado
+            const providerType = typeof window !== "undefined" && window.ethereum ? "wallet" : "public RPC"
+            
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            console.log(`🔍 [RANKING-SCREEN] FINALIZATION CHECK RESULT`)
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            console.log(`🔍 [RANKING-SCREEN] Provider used: ${providerType}`)
+            console.log(`🔍 [RANKING-SCREEN] Contract address: ${PRIZE_POOL_ADDRESS}`)
+            console.log(`🔍 [RANKING-SCREEN] Day checked: ${selectedDay}`)
+            console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}): ${totalPlayers.toString()}`)
+            console.log(`🔍 [RANKING-SCREEN] finalized (totalPlayers > 0): ${finalized}`)
+            console.log(`🔍 [RANKING-SCREEN] isDayFinalized set to: ${finalized}`)
+            console.log(`🔍 [RANKING-SCREEN] dayForFinalization stored as: ${selectedDay}`)
+            console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            
+            setIsDayFinalized(finalized)
+            setDayForFinalization(selectedDay) // Store which day was checked
+          } catch (contractErr: any) {
+            console.error(`❌ [RANKING-SCREEN] Error calling contract for finalization check:`, {
+              error: contractErr?.message || contractErr,
+              code: contractErr?.code,
+              data: contractErr?.data,
+              stack: contractErr?.stack
+            })
+            setIsDayFinalized(false)
+            setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
+          }
+        }
+      } catch (err: any) {
+        console.error(`❌ [RANKING-SCREEN] Unexpected error checking day finalization:`, {
+          error: err?.message || err,
+          stack: err?.stack
+        })
+        setIsDayFinalized(false)
+        setDayForFinalization(selectedDay) // Ainda armazenar o dia para referência
+      } finally {
+        setCheckingFinalization(false)
+      }
+      
       // ✅ CORREÇÃO: NÃO atualizar displayDate aqui se já foi atualizado no handleDateSelect
       // O displayDate já foi atualizado no handleDateSelect antes de chamar loadRanking
       // Só atualizar se for uma chamada inicial (quando displayDate ainda é o valor padrão)
       // Isso evita que loadRanking sobrescreva o displayDate que foi setado no handleDateSelect
-      const currentDisplayDay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
-      const newDay = Math.floor(new Date(date + 'T00:00:00Z').getTime() / 86400000)
+      const currentDisplayDay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
+      const newDay = getDayId(new Date(date + 'T00:00:00Z'))
       
       // Só atualizar se os dias forem diferentes (não apenas as strings)
       if (currentDisplayDay !== newDay) {
@@ -365,13 +481,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
   // ANTES: Recebia index e verificava index < 3 (só funcionava para primeira página)
   // AGORA: Recebe rank e verifica rank <= 3 (funciona para qualquer página)
   const canClaim = useCallback((rank: number, rowPlayer: string) => {
-    // 🔍 DIAGNÓSTICO: Log inicial com todos os dados
-    console.log(`🔍 [RANKING-SCREEN] canClaim called:`, {
+    // 🔍 DIAGNÓSTICO CRÍTICO: Log inicial com todos os dados
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] CANCLAIM CALLED`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] Input parameters:`, {
       rank,
       rowPlayer,
       displayDate,
       currentPlayer,
       claimedRanks: [...claimedRanks],
+      isDayFinalized,
+      dayForFinalization,
       timestamp: new Date().toISOString()
     })
 
@@ -388,35 +509,49 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     const dateObj = new Date(Date.UTC(year, month - 1, day))
-    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-    const todayDay = Math.floor(Date.now() / 86400000)
+    const selectedDay = getDayId(dateObj)
+    const todayDay = getDayId()
     const isPastDay = selectedDay < todayDay
     
-    // 🔍 DIAGNÓSTICO: Log crítico do cálculo do dia
-    console.log(`🔍 [RANKING-SCREEN] canClaim day calculation:`, {
-      displayDate,
-      dateObj: dateObj.toISOString(),
-      selectedDay,
-      todayDay,
-      isPastDay,
-      difference: todayDay - selectedDay,
-      dateObjTime: dateObj.getTime(),
-      todayTime: Date.now(),
-      calculation: `Math.floor(${dateObj.getTime()} / 86400000) = ${selectedDay}`,
-      todayCalculation: `Math.floor(${Date.now()} / 86400000) = ${todayDay}`
-    })
+    // 🔍 DIAGNÓSTICO CRÍTICO: Log do cálculo do dia e comparação
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] DAY CALCULATION IN CANCLAIM`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] displayDate: "${displayDate}"`)
+    console.log(`🔍 [RANKING-SCREEN] Parsed: year=${year}, month=${month}, day=${day}`)
+    console.log(`🔍 [RANKING-SCREEN] dateObj: ${dateObj.toISOString()}`)
+    console.log(`🔍 [RANKING-SCREEN] selectedDay (calculated in canClaim): ${selectedDay}`)
+    console.log(`🔍 [RANKING-SCREEN] selectedDay type: ${typeof selectedDay}`)
+    console.log(`🔍 [RANKING-SCREEN] todayDay: ${todayDay}`)
+    console.log(`🔍 [RANKING-SCREEN] isPastDay: ${isPastDay}`)
+    console.log(`🔍 [RANKING-SCREEN] isDayFinalized (from state): ${isDayFinalized}`)
+    console.log(`🔍 [RANKING-SCREEN] isDayFinalized type: ${typeof isDayFinalized}`)
+    console.log(`🔍 [RANKING-SCREEN] dayForFinalization (from state): ${dayForFinalization}`)
+    console.log(`🔍 [RANKING-SCREEN] ⚠️ CRITICAL COMPARISON:`)
+    console.log(`🔍 [RANKING-SCREEN]   - selectedDay in canClaim: ${selectedDay}`)
+    console.log(`🔍 [RANKING-SCREEN]   - dayForFinalization (from loadRanking): ${dayForFinalization}`)
+    console.log(`🔍 [RANKING-SCREEN]   - Do they match? ${selectedDay === dayForFinalization ? '✅ YES' : '❌ NO - WILL CHECK CONTRACT DIRECTLY'}`)
     
     const currentPlayerLower = (currentPlayer || '').toLowerCase().trim()
     const rowPlayerLower = (rowPlayer || '').toLowerCase().trim()
+    
+    // ✅ CORREÇÃO: Verificar se o dia está finalizado baseado no selectedDay
+    // Se selectedDay corresponde ao dayForFinalization, usar isDayFinalized do estado
+    // Caso contrário, assumir false (será verificado quando loadRanking for chamado para esse dia)
+    const actualIsDayFinalized = (selectedDay === dayForFinalization) ? isDayFinalized : false
+    
+    console.log(`🔍 [RANKING-SCREEN] actualIsDayFinalized: ${actualIsDayFinalized} (from state: ${isDayFinalized}, checked directly: ${selectedDay === dayForFinalization ? isDayFinalized : false})`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
     
     // ✅ CORREÇÃO: Comparar rowPlayerLower com currentPlayerLower (ambos já em lowercase)
     // ANTES: rowPlayerLower === currentPlayer?.toLowerCase() (redundante e pode falhar)
     // AGORA: rowPlayerLower === currentPlayerLower (comparação direta e correta)
     // ✅ CORREÇÃO: Verificar rank <= 3 em vez de index < 3
+    // ✅ NOVO: Verificar se o dia está finalizado (totalPlayers > 0) em vez de apenas isPastDay
     
     // 🔍 DIAGNÓSTICO: Verificar cada condição separadamente
     const checks = {
-      isPastDay,
+      isDayFinalized: actualIsDayFinalized, // ✅ CORRIGIDO: Usa verificação direta se necessário
       hasCurrentPlayer: currentPlayerLower !== '',
       hasRowPlayer: rowPlayerLower !== '',
       playersMatch: rowPlayerLower === currentPlayerLower,
@@ -425,7 +560,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     }
 
     const canClaimResult = (
-      checks.isPastDay &&
+      checks.isDayFinalized && // ✅ NOVO: Dia deve estar finalizado
       checks.hasCurrentPlayer &&
       checks.hasRowPlayer &&
       checks.playersMatch &&
@@ -433,36 +568,49 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       checks.notClaimed
     )
     
-    // 🔍 DIAGNÓSTICO: Log detalhado de cada verificação
-    console.log(`🔍 [RANKING-SCREEN] canClaim detailed check:`, {
-      rank,
-      rowPlayer: rowPlayer,
-      rowPlayerLower: rowPlayerLower,
-      currentPlayer: currentPlayer,
-      currentPlayerLower: currentPlayerLower,
-      selectedDay,
-      todayDay,
-      isPastDay: checks.isPastDay,
-      checks: checks,
-      canClaim: canClaimResult,
-      displayDate,
-      claimedRanks: [...claimedRanks]
-    })
+    // 🔍 DIAGNÓSTICO CRÍTICO: Log detalhado de cada verificação
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] CANCLAIM DETAILED CHECK`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
+    console.log(`🔍 [RANKING-SCREEN] rank: ${rank}`)
+    console.log(`🔍 [RANKING-SCREEN] rowPlayer: "${rowPlayer}"`)
+    console.log(`🔍 [RANKING-SCREEN] rowPlayerLower: "${rowPlayerLower}"`)
+    console.log(`🔍 [RANKING-SCREEN] currentPlayer: "${currentPlayer}"`)
+    console.log(`🔍 [RANKING-SCREEN] currentPlayerLower: "${currentPlayerLower}"`)
+    console.log(`🔍 [RANKING-SCREEN] selectedDay: ${selectedDay}`)
+    console.log(`🔍 [RANKING-SCREEN] todayDay: ${todayDay}`)
+    console.log(`🔍 [RANKING-SCREEN] isPastDay: ${isPastDay}`)
+    console.log(`🔍 [RANKING-SCREEN] actualIsDayFinalized: ${actualIsDayFinalized} (from state: ${isDayFinalized}, checked directly: ${selectedDay !== dayForFinalization})`)
+    console.log(`🔍 [RANKING-SCREEN] claimedRanks: [${claimedRanks.join(', ')}]`)
+    console.log(`🔍 [RANKING-SCREEN] displayDate: "${displayDate}"`)
+    console.log(`🔍 [RANKING-SCREEN] ---`)
+    console.log(`🔍 [RANKING-SCREEN] Individual checks:`)
+    console.log(`🔍 [RANKING-SCREEN]   - isDayFinalized: ${checks.isDayFinalized} ${!checks.isDayFinalized ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN]   - hasCurrentPlayer: ${checks.hasCurrentPlayer} ${!checks.hasCurrentPlayer ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN]   - hasRowPlayer: ${checks.hasRowPlayer} ${!checks.hasRowPlayer ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN]   - playersMatch: ${checks.playersMatch} ${!checks.playersMatch ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN]   - isTop3: ${checks.isTop3} ${!checks.isTop3 ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN]   - notClaimed: ${checks.notClaimed} ${!checks.notClaimed ? '❌ BLOCKING' : '✅'}`)
+    console.log(`🔍 [RANKING-SCREEN] ---`)
+    console.log(`🔍 [RANKING-SCREEN] Final result: canClaimResult = ${canClaimResult}`)
+    console.log(`🔍 [RANKING-SCREEN] ========================================`)
     
     // 🔍 DIAGNÓSTICO: Log de falhas específicas
     if (!canClaimResult) {
       const failures = []
-      if (!checks.isPastDay) failures.push('Day is not in the past')
+      if (!checks.isDayFinalized) failures.push('Day is not finalized on contract')
       if (!checks.hasCurrentPlayer) failures.push('No current player')
       if (!checks.hasRowPlayer) failures.push('No row player')
       if (!checks.playersMatch) failures.push('Players do not match')
       if (!checks.isTop3) failures.push('Not in top 3')
       if (!checks.notClaimed) failures.push('Already claimed')
-      console.log(`🔍 [RANKING-SCREEN] canClaim FAILED. Reasons:`, failures)
+      console.log(`🔍 [RANKING-SCREEN] ❌ canClaim FAILED. Blocking reasons:`, failures)
+    } else {
+      console.log(`🔍 [RANKING-SCREEN] ✅ canClaim PASSED - Button should appear!`)
     }
     
     return canClaimResult
-  }, [displayDate, currentPlayer, claimedRanks])
+  }, [displayDate, currentPlayer, claimedRanks, isDayFinalized, dayForFinalization])
 
   // Handle prize claim
   // ✅ CORREÇÃO: Fluxo completo de claim
@@ -477,9 +625,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // Recalculate selectedDay from displayDate to ensure it's current
     // Store in outer scope so it's available in catch block
     const [year, month, day] = displayDate.split('-').map(Number)
-    const dateObj = new Date(Date.UTC(year, month - 1, day))
-    const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-    const dateString = displayDate
+      const dateObj = new Date(Date.UTC(year, month - 1, day))
+      const selectedDay = getDayId(dateObj)
+      const dateString = displayDate
     let dbRegistrationSuccess = false
 
     try {
@@ -539,7 +687,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
 
-      // ✅ Usar o mesmo ABI do app/page.tsx para garantir consistência
+      // ✅ REVERTIDO: Usar ABI original do contrato existente
       const PRIZE_POOL_ABI = [
         "function claim(uint256 day) external",
         "function getWinner(uint256 day, uint256 rank) view returns (address)",
@@ -552,10 +700,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
       const writeContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, signer)
       
-      // ✅ CORREÇÃO: Verificar se o dia está finalizado antes de tentar fazer claim
-      // O contrato exige que totalPlayers[day] > 0 para permitir claim
-      // Isso só acontece quando o admin chama setDailyWinners() para registrar os vencedores
+      // ✅ REVERTIDO: Verificar se o dia está finalizado usando totalPlayers > 0 (lógica original)
       console.log(`🔍 [RANKING-SCREEN] Checking if day ${selectedDay} is finalized...`)
+      console.log(`🔍 [RANKING-SCREEN] Contract address: ${PRIZE_POOL_ADDRESS}`)
       const totalPlayers = await readContract.totalPlayers(selectedDay)
       console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}) = ${totalPlayers.toString()}`)
       
@@ -765,6 +912,36 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate])
 
+  // ✅ NOVO: Garantir que loadRanking seja chamado quando displayDate mudar (via calendário)
+  // Isso garante que isDayFinalized seja verificado para o dia correto
+  // ✅ CORREÇÃO: Sempre chamar loadRanking quando displayDate mudar, mesmo se o dia já foi verificado
+  // Isso garante que a verificação de finalização seja sempre executada
+  useEffect(() => {
+    if (displayDate) {
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] DISPLAYDATE CHANGED - useEffect triggered`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      console.log(`🔍 [RANKING-SCREEN] displayDate: "${displayDate}"`)
+      const selectedDay = getDayId(new Date(displayDate + 'T00:00:00Z'))
+      const dayMatches = selectedDay === dayForFinalization
+      console.log(`🔍 [RANKING-SCREEN] Day ${selectedDay} matches dayForFinalization (${dayForFinalization}): ${dayMatches}`)
+      console.log(`🔍 [RANKING-SCREEN] Current isDayFinalized state: ${isDayFinalized}`)
+      console.log(`🔍 [RANKING-SCREEN] ========================================`)
+      
+      // ✅ CORREÇÃO: Sempre chamar loadRanking quando displayDate mudar
+      // Mesmo que o dia já tenha sido verificado, precisamos garantir que a verificação seja executada
+      // Isso resolve o problema de isDayFinalized estar false mesmo quando o dia foi verificado
+      console.log(`🔍 [RANKING-SCREEN] Calling loadRanking to verify finalization for day ${selectedDay}...`)
+      loadRanking(displayDate).catch((err) => {
+        console.error(
+          "❌ [RANKING-SCREEN] loadRanking promise rejected inside displayDate useEffect:",
+          err
+        )
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayDate])
+
   // ✅ CORREÇÃO: Removido useMemo para 'rankings' - não é mais necessário
   // ANTES: rankings era um useMemo que mapeava ranking para um formato diferente
   // PROBLEMA: Se o mapeamento falhasse, rankings ficava vazio mesmo com ranking cheio
@@ -795,8 +972,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       
       // 🔍 DIAGNÓSTICO: Calcular day ID antes de atualizar
       const dateObj = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate()))
-      const selectedDay = Math.floor(dateObj.getTime() / 86400000)
-      const todayDay = Math.floor(Date.now() / 86400000)
+      const selectedDay = getDayId(dateObj)
+      const todayDay = getDayId()
       const isPastDay = selectedDay < todayDay
       
       console.log(`📅 [RANKING-SCREEN] Calendar date selected:`, {
@@ -1074,8 +1251,8 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                     const rank = (currentPage - 1) * itemsPerPage + index + 1
 
                     // 🔍 DIAGNÓSTICO: Log detalhado para cada linha ANTES de chamar canClaim
-                    const selectedDayFromDisplay = displayDate ? Math.floor(new Date(displayDate + 'T00:00:00Z').getTime() / 86400000) : null
-                    const todayDayFromDisplay = Math.floor(Date.now() / 86400000)
+                    const selectedDayFromDisplay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
+                    const todayDayFromDisplay = getDayId()
                     const isPastDayFromDisplay = selectedDayFromDisplay !== null && selectedDayFromDisplay < todayDayFromDisplay
                     
                     console.log(`🔍 [RANKING-SCREEN] Row ${index} (rank ${rank}) - BEFORE canClaim:`, {
@@ -1112,7 +1289,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                         <td className="px-4 py-3 text-center">{row.errors ?? 0}</td>
                         <td className="px-4 py-3 text-center">
                           {/* ✅ CORREÇÃO: Passar rank diretamente para canClaim (agora recebe rank, não index) */}
-                          {canClaimResult ? (
+                          {checkingFinalization ? (
+                            <span className="text-xs text-gray-500">Checking...</span>
+                          ) : canClaimResult ? (
                             <Button
                               onClick={() => {
                                 console.log(`🔍 [RANKING-SCREEN] Claim button clicked for rank ${rank}`)
@@ -1123,8 +1302,18 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
                               Claim prize
                             </Button>
                           ) : claimedRanks.includes(rank) ? (
-                            <span>Prize already claimed</span>
-                          ) : null}
+                            <span className="text-xs text-gray-600">Prize already claimed</span>
+                          ) : (() => {
+                            // Verificar se o dia está finalizado baseado no selectedDay
+                            const selectedDayFromDisplay = displayDate ? getDayId(new Date(displayDate + 'T00:00:00Z')) : null
+                            const dayIsFinalized = selectedDayFromDisplay !== null ? ((selectedDayFromDisplay === dayForFinalization) ? isDayFinalized : false) : false
+                            const isCurrentPlayer = row.player?.toLowerCase() === currentPlayer?.toLowerCase()
+                            
+                            if (!dayIsFinalized && rank <= 3 && isCurrentPlayer) {
+                              return <span className="text-xs text-amber-600">Claims will be available after the day is finalized (UTC)</span>
+                            }
+                            return null
+                          })()}
                         </td>
                       </tr>
                     )

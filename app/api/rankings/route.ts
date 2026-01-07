@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase";
+import { getDayId } from "@/utils/day";
 
 export async function GET(req: Request) {
   try {
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
     }
 
     console.log(`[RANKINGS] Querying matches for day: ${day}`);
-    const todayDay = Math.floor(Date.now() / 86400000);
+    const todayDay = getDayId();
     console.log(`[RANKINGS] Today's day: ${todayDay}, requested day: ${day}`);
 
     // First try to get matches with day field
@@ -145,7 +146,7 @@ export async function GET(req: Request) {
       console.log(`[RANKINGS] Found ${dataByTimestamp.length} matches by timestamp`);
       // Calculate day from timestamp for each match and verify
       const matchesWithDay = dataByTimestamp.map(match => {
-        const calculatedDay = Math.floor(new Date(match.timestamp).getTime() / 86400000);
+        const calculatedDay = getDayId(new Date(match.timestamp));
         return {
           ...match,
           day: calculatedDay

@@ -167,7 +167,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
         const PRIZE_POOL_ABI = [
           "function prizes(uint256) view returns (uint256)",
         ]
-        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
         
         if (PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
           setLoadingPrizeConfig(false)
@@ -214,7 +214,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
           "function getWinner(uint256 day, uint256 rank) view returns (address)",
           "function claimed(uint256 day, address user) view returns (bool)",
         ]
-        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
         
         if (PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
           setLoadingWinners(false)
@@ -297,7 +297,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
           "function canClaim(uint256 day, address user) view returns (bool)",
           "function claimed(uint256 day, address user) view returns (bool)",
         ]
-        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+        const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
         
         if (PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
           setCheckingClaims(false)
@@ -564,7 +564,7 @@ export function DailyResultsScreen({ date, rankings, currentPlayer, onBack, onCl
                                               "function canClaim(uint256 day, address user) view returns (bool)",
                                               "function claimed(uint256 day, address user) view returns (bool)",
                                             ]
-                                            const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+                                            const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
                                             const contract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
                                             
                                             const newCanClaim = await contract.canClaim(day, currentPlayer)

@@ -11,6 +11,7 @@ import { useMetaTransactions } from "@/hooks/use-meta-transactions"
 import { useGameCredits } from "@/hooks/use-game-credits"
 import { CreditsPurchaseDialog } from "@/components/credits-purchase-dialog"
 import { CreditsRequiredDialog } from "@/components/credits-required-dialog"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -287,6 +288,7 @@ export function GameScreen({
   const nextAnimalShouldBeGoldenRef = useRef(false)
   const gameStartTimeRef = useRef<number | null>(null) // Track when game started (for duration validation)
   const gameCompletedRef = useRef(false) // Track if game was completed to the end
+  const gameEventsRef = useRef<Array<{ holeId: number, animalType: "mole" | "cow" | "golden", timestamp: number }>>([]) // Track game events for backend calculation
 
   const holeCount = DIFFICULTY_HOLES[difficulty]
   const timerRef = useRef<NodeJS.Timeout | undefined>(undefined)
@@ -459,6 +461,7 @@ export function GameScreen({
     setShowPauseDialog(false)
     gameStartTimeRef.current = Date.now() // Track game start time
     gameCompletedRef.current = false // Reset completion flag
+    gameEventsRef.current = [] // Reset game events
 
     setTimeout(() => {
       showNextAnimal()
@@ -508,6 +511,13 @@ export function GameScreen({
         cowsHitRef.current += 1
         setErrors(errorsRef.current)
       }
+
+      // Record event for backend calculation
+      gameEventsRef.current.push({
+        holeId: holeIndex,
+        animalType: animalType,
+        timestamp: Date.now()
+      })
 
       // Update score and hide animal immediately
       scoreRef.current = Math.max(0, scoreRef.current + pointsChange)
@@ -585,6 +595,7 @@ export function GameScreen({
           errors: errorsRef.current,
           gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : GAME_DURATION,
           completed: true,
+          events: gameEventsRef.current,
         })
         console.log("✅ onGameComplete called")
         
@@ -842,6 +853,7 @@ export function GameScreen({
                     errors: errorsRef.current,
                     gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0,
                     completed: false, // Game was quit, not completed to the end
+                    events: gameEventsRef.current,
                   })
                   
                   // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar
@@ -912,7 +924,7 @@ export function GameScreen({
             <Button
               onClick={() => {
                 playClickSound()
-                const today = Math.floor(Date.now() / 86400000)
+                const today = getDayId()
                 onViewRanking(today) // envia o dia correto para o ranking
               }}
               variant="outline"

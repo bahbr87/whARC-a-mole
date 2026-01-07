@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Trophy, AlertCircle, Star } from "lucide-react"
 import type { GameSession } from "@/app/page"
+import { getDayId } from "@/utils/day"
 
 // Global audio context for click sounds (reused for better performance)
 let clickAudioContext: AudioContext | null = null
@@ -132,7 +133,7 @@ export function ResultsScreen({ sessionData, onPlayAgain, onViewRanking }: Resul
             <Button
               onClick={() => {
                 playClickSound()
-                const today = Math.floor(Date.now() / 86400000)
+                const today = getDayId()
                 onViewRanking(today) // envia o dia correto para o ranking
               }}
               size="lg"

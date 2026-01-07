@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     // Get configuration
     const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network"
     // Use NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS if available, otherwise fallback
-    const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || process.env.PRIZE_POOL_CONTRACT_ADDRESS || "0xeA0df70040E77a821b14770E53aa577A745930ae"
+    const PRIZE_POOL_ADDRESS = process.env.NEXT_PUBLIC_PRIZE_POOL_CONTRACT_ADDRESS || process.env.PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
     const OWNER_PRIVATE_KEY = process.env.PRIZE_POOL_OWNER_PRIVATE_KEY
 
     addLog(`⚙️ Configuração: RPC_URL=${RPC_URL}`)
@@ -720,7 +720,7 @@ export async function GET(request: NextRequest) {
     }
 
     const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network"
-    const PRIZE_POOL_ADDRESS = process.env.PRIZE_POOL_CONTRACT_ADDRESS || "0xB98b8A9213072903277B9f592009E7C22acd2dd3"
+    const PRIZE_POOL_ADDRESS = process.env.PRIZE_POOL_CONTRACT_ADDRESS || "0xb07bB827a5A53e2b36eb0126aDD22ca1b4843DC7"
 
     const provider = new JsonRpcProvider(RPC_URL)
     const contract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
