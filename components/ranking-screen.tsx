@@ -401,13 +401,19 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
             ]
             const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
             
+            // ✅ REVERTIDO: Usar verificação original baseada em totalPlayers > 0
             console.log(`🔍 [RANKING-SCREEN] Calling totalPlayers(${selectedDay}) on contract ${PRIZE_POOL_ADDRESS}...`)
             const totalPlayers = await readContract.totalPlayers(selectedDay)
             const finalized = totalPlayers > BigInt(0)
             
+            // ✅ LOG: Identificar qual provider está sendo usado
+            const providerType = typeof window !== "undefined" && window.ethereum ? "wallet" : "public RPC"
+            
             console.log(`🔍 [RANKING-SCREEN] ========================================`)
             console.log(`🔍 [RANKING-SCREEN] FINALIZATION CHECK RESULT`)
             console.log(`🔍 [RANKING-SCREEN] ========================================`)
+            console.log(`🔍 [RANKING-SCREEN] Provider used: ${providerType}`)
+            console.log(`🔍 [RANKING-SCREEN] Contract address: ${PRIZE_POOL_ADDRESS}`)
             console.log(`🔍 [RANKING-SCREEN] Day checked: ${selectedDay}`)
             console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}): ${totalPlayers.toString()}`)
             console.log(`🔍 [RANKING-SCREEN] finalized (totalPlayers > 0): ${finalized}`)
@@ -681,7 +687,7 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
         return
       }
 
-      // ✅ Usar o mesmo ABI do app/page.tsx para garantir consistência
+      // ✅ REVERTIDO: Usar ABI original do contrato existente
       const PRIZE_POOL_ABI = [
         "function claim(uint256 day) external",
         "function getWinner(uint256 day, uint256 rank) view returns (address)",
@@ -694,10 +700,9 @@ export default function RankingScreen({ currentPlayer, onBack, playerRankings, o
       const readContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider)
       const writeContract = new Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, signer)
       
-      // ✅ CORREÇÃO: Verificar se o dia está finalizado antes de tentar fazer claim
-      // O contrato exige que totalPlayers[day] > 0 para permitir claim
-      // Isso só acontece quando o admin chama setDailyWinners() para registrar os vencedores
+      // ✅ REVERTIDO: Verificar se o dia está finalizado usando totalPlayers > 0 (lógica original)
       console.log(`🔍 [RANKING-SCREEN] Checking if day ${selectedDay} is finalized...`)
+      console.log(`🔍 [RANKING-SCREEN] Contract address: ${PRIZE_POOL_ADDRESS}`)
       const totalPlayers = await readContract.totalPlayers(selectedDay)
       console.log(`🔍 [RANKING-SCREEN] totalPlayers(${selectedDay}) = ${totalPlayers.toString()}`)
       

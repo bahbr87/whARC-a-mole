@@ -57,49 +57,68 @@ export async function GET(request: NextRequest) {
       return formatResponse(result, day)
     }
 
-    // ✅ CORREÇÃO: Buscar todos os dias pendentes e finalizar todos
-    console.log(`🚀 [CRON] Finding all pending days to finalize...`)
+    // ✅ CORREÇÃO: Sempre tentar registrar o dia anterior (yesterday) + buscar dias pendentes
+    const today = new Date()
+    const yesterday = new Date(Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate() - 1
+    ))
+    const yesterdayDay = getDayId(yesterday)
     
+    console.log(`🚀 [CRON] Registering yesterday (day ${yesterdayDay}, ${yesterday.toISOString().split("T")[0]})...`)
+    
+    // Sempre tentar registrar o dia anterior primeiro
+    const yesterdayResult = await registerDailyWinners(yesterdayDay)
+    
+    const results: Array<{ day: number; success: boolean; message: string; error?: string }> = [
+      {
+        day: yesterdayDay,
+        success: yesterdayResult.success,
+        message: yesterdayResult.success 
+          ? (yesterdayResult.alreadyRegistered ? "Already registered" : "Registered successfully")
+          : yesterdayResult.error || "Failed",
+        error: yesterdayResult.error,
+      }
+    ]
+    
+    // Também buscar e registrar outros dias pendentes (backfill)
+    console.log(`🔍 [CRON] Finding other pending days to finalize...`)
     const pendingDays = await findPendingDays()
-    console.log(`📋 [CRON] Found ${pendingDays.length} pending days:`, pendingDays)
-
-    if (pendingDays.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "No pending days to finalize",
-        finalizedDays: [],
-        timestamp: new Date().toISOString(),
-      })
-    }
-
-    // Finalizar todos os dias pendentes
-    const results: Array<{ day: number; success: boolean; message: string; error?: string }> = []
     
-    for (const day of pendingDays) {
-      console.log(`🔄 [CRON] Finalizing day ${day}...`)
-      const result = await registerDailyWinners(day)
+    // Remover yesterdayDay se estiver na lista de pendentes (já foi processado)
+    const otherPendingDays = pendingDays.filter(day => day !== yesterdayDay)
+    
+    if (otherPendingDays.length > 0) {
+      console.log(`📋 [CRON] Found ${otherPendingDays.length} additional pending days:`, otherPendingDays)
       
-      results.push({
-        day,
-        success: result.success,
-        message: result.success 
-          ? (result.alreadyRegistered ? "Already registered" : "Registered successfully")
-          : result.error || "Failed",
-        error: result.error,
-      })
-      
-      // Pequeno delay entre registros para evitar rate limiting
-      if (pendingDays.length > 1) {
+      for (const day of otherPendingDays) {
+        console.log(`🔄 [CRON] Finalizing day ${day}...`)
+        const result = await registerDailyWinners(day)
+        
+        results.push({
+          day,
+          success: result.success,
+          message: result.success 
+            ? (result.alreadyRegistered ? "Already registered" : "Registered successfully")
+            : result.error || "Failed",
+          error: result.error,
+        })
+        
+        // Pequeno delay entre registros para evitar rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
+    } else {
+      console.log(`📋 [CRON] No additional pending days found`)
     }
 
     const successful = results.filter(r => r.success).length
     const failed = results.filter(r => !r.success).length
+    const withErrors = results.filter(r => r.error && !r.error.includes("No players found")).length
 
     return NextResponse.json({
       success: true,
-      message: `Finalized ${successful} day(s), ${failed} failed`,
+      message: `Processed ${results.length} day(s): ${successful} successful, ${failed} failed (${withErrors} with errors)`,
       results,
       timestamp: new Date().toISOString(),
     })

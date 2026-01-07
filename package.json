@@ -16,6 +16,8 @@
     "register-winners": "tsx scripts/register-daily-winners.ts",
     "register-winners-auto": "tsx scripts/register-daily-winners-auto.ts",
     "register-winners-manual": "tsx scripts/register-winners-manual.ts",
+    "test-register-winners": "tsx scripts/test-register-winners.ts",
+    "check-cron-setup": "tsx scripts/check-cron-setup.ts",
     "test-finalize-day": "tsx scripts/test-finalize-day.ts",
     "fix-winners-date": "tsx scripts/fix-winners-date.ts",
     "backfill-2025-12-16": "tsx scripts/backfill-2025-12-16.ts",
