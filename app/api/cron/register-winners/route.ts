@@ -144,8 +144,7 @@ async function findPendingDays(): Promise<number[]> {
     // Buscar todos os dias únicos que têm matches no Supabase
     const { data: matches, error } = await supabaseAdmin
       .from("matches")
-      .select("day, timestamp")
-      .not("day", "is", null) // Apenas matches que têm o campo day preenchido
+      .select("id, day, timestamp")
 
     if (error) {
       console.error("[CRON] Error fetching matches:", error)
@@ -163,13 +162,26 @@ async function findPendingDays(): Promise<number[]> {
 
     matches.forEach((match: any) => {
       let day: number
-      
+
       if (match.day) {
         // Se tem campo day, usar diretamente
         day = match.day
       } else if (match.timestamp) {
         // Se não tem day, calcular do timestamp
-        day = getDayId(new Date(match.timestamp))
+        // Convert Supabase timestamp to ISO Date
+        let ts: Date
+        if (typeof match.timestamp === "string") {
+          ts = new Date(match.timestamp.replace(" ", "T").replace("+00", "Z"))
+        } else {
+          ts = new Date(match.timestamp)
+        }
+
+        if (isNaN(ts.getTime())) {
+          console.warn(`[CRON] Invalid timestamp for match id=${match.id}, skipping`)
+          return
+        }
+
+        day = getDayId(ts)
       } else {
         return // Pular se não tem nem day nem timestamp
       }
