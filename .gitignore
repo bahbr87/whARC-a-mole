@@ -38,4 +38,13 @@ next-env.d.ts
 # data storage
 /data/rankings.json
 
+# Scripts privados de prizepool / USDC
+scripts/check-all-prizepool-balances.ts
+scripts/check-all-wallets-usdc.ts
+scripts/check-prizepool-balance.ts
+scripts/fund-current-prizepool.ts
+scripts/investigate-prizepool-drainage.ts
+scripts/send-750-usdc-to-prizepool.ts
+scripts/transfer-all-usdc-to-prizepool.ts
+scripts/verify-usdc-contract.ts
 
