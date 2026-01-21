@@ -6,7 +6,7 @@
 // Set GAME_DISABLED to true to show maintenance screen and block all game functionality.
 // Set GAME_DISABLED to false to restore normal game operation.
 // ============================================================================
-const GAME_DISABLED = false
+const GAME_DISABLED = true
 // ============================================================================
 
 import { useState, useCallback, useEffect } from "react"
