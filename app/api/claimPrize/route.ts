@@ -76,6 +76,18 @@ export async function POST(req: Request) {
     }
 
     // ============================================================================
+    // VALIDATE DAY IS FINALIZED (cannot claim for today or future days)
+    // ============================================================================
+    const todayDay = Math.floor(Date.now() / 86400000);
+    if (claimableDay >= todayDay) {
+      console.error(`[CLAIM-PRIZE] ❌ Day not finalized: claimableDay=${claimableDay}, todayDay=${todayDay}`);
+      return new Response(JSON.stringify({
+        error: "Day not finalized",
+        details: "You can only claim prizes for past days"
+      }), { status: 400 });
+    }
+
+    // ============================================================================
     // VALIDATE INPUT - Rank
     // ============================================================================
     if (rank === undefined || rank === null) {
@@ -155,21 +167,12 @@ export async function POST(req: Request) {
       if (!canClaim) {
         // Additional checks to provide better error message
         const isClaimed = await prizePoolContract.claimed(claimableDay, normalizedPlayer);
-        const totalPlayers = await prizePoolContract.totalPlayers(claimableDay);
         
         if (isClaimed) {
           console.log(`[CLAIM-PRIZE] ❌ Prize already claimed on-chain`);
           return new Response(JSON.stringify({ 
             error: "Prize already claimed",
             details: "This prize has already been claimed on the blockchain"
-          }), { status: 400 });
-        }
-        
-        if (totalPlayers === BigInt(0)) {
-          console.log(`[CLAIM-PRIZE] ❌ Day not finalized`);
-          return new Response(JSON.stringify({ 
-            error: "Day not finalized",
-            details: "This day has not been finalized yet. Winners must be registered first."
           }), { status: 400 });
         }
         
