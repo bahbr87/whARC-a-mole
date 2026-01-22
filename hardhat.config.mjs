@@ -26,6 +26,21 @@ export default {
       accounts: process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY] : [],
     },
   },
+  etherscan: {
+    apiKey: {
+      arc: "no-api-key-needed",
+    },
+    customChains: [
+      {
+        network: "arc",
+        chainId: 5042002,
+        urls: {
+          apiURL: "https://api.testnet.arcscan.app/api",
+          browserURL: "https://testnet.arcscan.app",
+        },
+      },
+    ],
+  },
   paths: {
     sources: "./contracts",
     tests: "./test",
