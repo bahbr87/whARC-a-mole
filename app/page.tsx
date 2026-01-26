@@ -296,6 +296,12 @@ function WharcAMoleContent() {
       console.log("   Errors:", data.errors)
 
       console.log("   Current address:", address)
+      
+      console.log(`🔍 [INVESTIGATION-HANDLE] Recebido em handleGameComplete:`)
+      console.log(`🔍 [INVESTIGATION-HANDLE]   data.events?.length = ${data.events?.length || 0}`)
+      console.log(`🔍 [INVESTIGATION-HANDLE]   data.events é array? ${Array.isArray(data.events)}`)
+      console.log(`🔍 [INVESTIGATION-HANDLE]   Primeiros 5 eventos:`, data.events?.slice(0, 5))
+      console.log(`🔍 [INVESTIGATION-HANDLE]   Últimos 5 eventos:`, data.events?.slice(-5))
 
       
 
@@ -350,7 +356,18 @@ function WharcAMoleContent() {
           // Save match to Supabase (for daily ranking) via API
 
           try {
-
+            const eventsToSend = data.events || []
+            console.log(`🔍 [INVESTIGATION-SEND] ANTES de enviar para /api/saveMatch:`)
+            console.log(`🔍 [INVESTIGATION-SEND]   eventsToSend.length = ${eventsToSend.length}`)
+            console.log(`🔍 [INVESTIGATION-SEND]   eventsToSend é array? ${Array.isArray(eventsToSend)}`)
+            console.log(`🔍 [INVESTIGATION-SEND]   Payload completo:`, JSON.stringify({
+              player: address,
+              events: eventsToSend,
+              game_duration: data.gameDuration || 30,
+              completed: data.completed !== false,
+              difficulty: difficulty
+            }, null, 2))
+            
             const response = await fetch("/api/saveMatch", {
 
               method: "POST",
@@ -361,7 +378,7 @@ function WharcAMoleContent() {
 
                 player: address, 
 
-                events: data.events || [], // Events for backend score calculation
+                events: eventsToSend, // Events for backend score calculation
 
                 game_duration: data.gameDuration || 30, // Game duration in seconds
 

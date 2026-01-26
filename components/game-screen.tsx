@@ -518,6 +518,7 @@ export function GameScreen({
         animalType: animalType,
         timestamp: Date.now()
       })
+      console.log(`🔍 [INVESTIGATION-CLICK] Evento adicionado: animalType=${animalType}, holeId=${holeIndex}, totalEvents=${gameEventsRef.current.length}, timestamp=${Date.now()}`)
 
       // Update score and hide animal immediately
       scoreRef.current = Math.max(0, scoreRef.current + pointsChange)
@@ -589,13 +590,20 @@ export function GameScreen({
         if (nextAnimalTimerRef.current) clearTimeout(nextAnimalTimerRef.current)
 
         console.log("📤 Calling onGameComplete...")
+        console.log(`🔍 [INVESTIGATION-FINAL] ANTES de chamar onGameComplete:`)
+        console.log(`🔍 [INVESTIGATION-FINAL]   gameEventsRef.current.length = ${gameEventsRef.current.length}`)
+        console.log(`🔍 [INVESTIGATION-FINAL]   scoreRef.current = ${scoreRef.current}`)
+        console.log(`🔍 [INVESTIGATION-FINAL]   Primeiros 5 eventos:`, gameEventsRef.current.slice(0, 5))
+        console.log(`🔍 [INVESTIGATION-FINAL]   Últimos 5 eventos:`, gameEventsRef.current.slice(-5))
+        const eventsSnapshot = [...gameEventsRef.current] // Criar snapshot para garantir que não será modificado
+        console.log(`🔍 [INVESTIGATION-FINAL]   Snapshot criado com ${eventsSnapshot.length} eventos`)
         onGameComplete({
           score: scoreRef.current,
           goldenMolesHit,
           errors: errorsRef.current,
           gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : GAME_DURATION,
           completed: true,
-          events: gameEventsRef.current,
+          events: eventsSnapshot,
         })
         console.log("✅ onGameComplete called")
         
@@ -847,13 +855,18 @@ export function GameScreen({
                   if (nextAnimalTimerRef.current) clearTimeout(nextAnimalTimerRef.current)
                   
                   // Complete game with current stats (but mark as not completed)
+                  console.log(`🔍 [INVESTIGATION-QUIT] ANTES de chamar onGameComplete (quit):`)
+                  console.log(`🔍 [INVESTIGATION-QUIT]   gameEventsRef.current.length = ${gameEventsRef.current.length}`)
+                  console.log(`🔍 [INVESTIGATION-QUIT]   scoreRef.current = ${scoreRef.current}`)
+                  const eventsSnapshotQuit = [...gameEventsRef.current] // Criar snapshot para garantir que não será modificado
+                  console.log(`🔍 [INVESTIGATION-QUIT]   Snapshot criado com ${eventsSnapshotQuit.length} eventos`)
                   onGameComplete({
                     score: scoreRef.current,
                     goldenMolesHit,
                     errors: errorsRef.current,
                     gameDuration: gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0,
                     completed: false, // Game was quit, not completed to the end
-                    events: gameEventsRef.current,
+                    events: eventsSnapshotQuit,
                   })
                   
                   // ✅ CORREÇÃO: Atualizar créditos após o jogo terminar

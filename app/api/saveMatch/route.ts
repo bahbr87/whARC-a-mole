@@ -74,6 +74,11 @@ interface GameEvent {
 
 export async function POST(req: Request) {
   try {
+    // Game disabled check
+    if (process.env.GAME_DISABLED === "true") {
+      return new Response("Service unavailable", { status: 503 });
+    }
+
     // Validate Supabase configuration at runtime
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
@@ -81,8 +86,18 @@ export async function POST(req: Request) {
 
     const { player, events, game_duration, completed, difficulty } = await req.json();
 
+    console.log(`🔍 [INVESTIGATION-RECEIVE] Recebido no backend /api/saveMatch:`)
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   events?.length = ${events?.length || 0}`)
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   events é array? ${Array.isArray(events)}`)
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   typeof events = ${typeof events}`)
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   Primeiros 5 eventos:`, events?.slice?.(0, 5))
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   Últimos 5 eventos:`, events?.slice?.(-5))
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   player = ${player}`)
+    console.log(`🔍 [INVESTIGATION-RECEIVE]   difficulty = ${difficulty}`)
+
     // Validate required fields
     if (!player || !events || !Array.isArray(events)) {
+      console.log(`🔍 [INVESTIGATION-RECEIVE] ❌ VALIDAÇÃO FALHOU: player=${!!player}, events=${!!events}, isArray=${Array.isArray(events)}`)
       return NextResponse.json({ error: 'Missing required fields: player and events' }, { status: 400 });
     }
 
