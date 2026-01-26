@@ -458,7 +458,7 @@ function WharcAMoleContent() {
 
     },
 
-    [address],
+    [address, difficulty],
 
   )
 
