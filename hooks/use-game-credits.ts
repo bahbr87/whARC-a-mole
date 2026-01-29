@@ -40,6 +40,7 @@ interface UseGameCreditsReturn {
   recordClick: (sessionId: string) => Promise<void>
   refreshCredits: () => Promise<void>
   getCreditsBalance: () => Promise<number>
+  decrementCreditsOptimistic: (clickCount: number) => void
   isLoading: boolean
 }
 
@@ -381,52 +382,12 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         }
         console.log("✅ [purchaseCredits] Transaction confirmed in block:", receipt.blockNumber)
 
-        // After tx.wait(), read balance DIRECTLY from contract (source of truth)
-        // Don't rely on events or state - always read from contract
-        // ✅ CORREÇÃO: Aumentar delay e tentar múltiplas vezes para garantir que o contrato foi atualizado
-        console.log("⏳ [purchaseCredits] Waiting for contract state to update...")
-        await new Promise(resolve => setTimeout(resolve, 2000)) // Aumentado para 2s
-        
-        // ✅ CORREÇÃO: Ler o saldo diretamente do contrato (fonte da verdade)
-        // Não confiar em eventos ou estado - sempre ler do contrato
-        let newBalance = await readCreditsFromContract(currentAddress)
-        let attempts = 0
-        const maxAttempts = 5
-        
-        const expectedCredits = previousBalance + amount // Saldo esperado após compra
-        
-        console.log(`🔄 [purchaseCredits] Previous balance: ${previousBalance}, Amount purchased: ${amount}, Expected: ${expectedCredits}`)
-        console.log(`🔄 [purchaseCredits] Attempt ${attempts + 1}: Current balance from contract: ${newBalance}`)
-        
-        // Se o saldo já está correto, não precisa tentar novamente
-        if (newBalance >= expectedCredits) {
-          console.log("✅ [purchaseCredits] Balance updated correctly on first try!")
-        } else {
-          // Tentar novamente algumas vezes (pode ser que o contrato ainda não tenha atualizado)
-          while (attempts < maxAttempts && newBalance < expectedCredits) {
-            attempts++
-            console.log(`🔄 [purchaseCredits] Attempt ${attempts + 1}: Current balance from contract: ${newBalance}, Expected: ${expectedCredits}`)
-            
-            // Aguardar mais um pouco e tentar novamente
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            newBalance = await readCreditsFromContract(currentAddress)
-            
-            if (newBalance >= expectedCredits) {
-              console.log("✅ [purchaseCredits] Balance updated correctly!")
-              break
-            }
-          }
-        }
-        
-        // ✅ CORREÇÃO: Sempre atualizar o estado com o valor do contrato (fonte da verdade)
-        console.log("✅ [purchaseCredits] Final balance from contract:", newBalance)
-        setCredits(prev => {
-          console.log(`🔄 [purchaseCredits] Updating credits state from ${prev} to ${newBalance}`)
-          return Number(newBalance)
-        })
+        // ✅ CORREÇÃO: Após a transação ser confirmada, chamar explicitamente refreshCredits()
+        // para atualizar o estado imediatamente, sem depender de eventos ou useEffect
+        console.log("🔄 [purchaseCredits] Transaction confirmed, refreshing credits from contract...")
+        await refreshCredits()
         
         console.log("✅ [purchaseCredits] Credits purchased successfully!")
-        console.log("✅ [purchaseCredits] New balance from contract:", newBalance)
         console.log("✅ [purchaseCredits] USDC was sent to PrizePool:", prizePoolAddress)
       } catch (error: any) {
         console.error("❌ [purchaseCredits] Error purchasing credits:", error)
@@ -441,7 +402,20 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         setIsLoading(false)
       }
     },
-    [walletAddress, readCreditsFromContract],
+    [walletAddress, readCreditsFromContract, refreshCredits],
+  )
+
+  // Decrement credits optimistically (immediate UI update)
+  const decrementCreditsOptimistic = useCallback(
+    (clickCount: number) => {
+      console.log(`⚡ [decrementCreditsOptimistic] Decrementing ${clickCount} credits optimistically`)
+      setCredits(prevCredits => {
+        const newCredits = Math.max(0, prevCredits - clickCount)
+        console.log(`⚡ [decrementCreditsOptimistic] Credits: ${prevCredits} -> ${newCredits}`)
+        return newCredits
+      })
+    },
+    [],
   )
 
   // Consume credits (for manual consumption if needed)
@@ -455,6 +429,9 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
       if (GAME_CREDITS_ADDRESS === "0x0000000000000000000000000000000000000000") {
         return
       }
+
+      // Decrement optimistically for immediate UI feedback
+      decrementCreditsOptimistic(clickCount)
 
       try {
         if (typeof window === "undefined" || !window.ethereum) {
@@ -471,12 +448,19 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         // Wait for transaction before updating
         await tx.wait()
         
-        // Read balance from contract after consumption
+        // Read balance from contract after consumption (reconcile with source of truth)
         const newBalance = await readCreditsFromContract(walletAddress)
         // ✅ Convert to number explicitly (guarantee type safety)
         setCredits(Number(newBalance))
       } catch (error: any) {
         console.error("Error consuming credits:", error)
+        // On error, reconcile with contract to restore correct state
+        try {
+          const correctBalance = await readCreditsFromContract(walletAddress)
+          setCredits(Number(correctBalance))
+        } catch (reconcileError) {
+          console.error("Error reconciling credits after error:", reconcileError)
+        }
         // Check if user rejected the transaction (code 4001)
         if (error?.code === 4001 || error?.message?.includes("rejected") || error?.message?.includes("denied") || error?.message?.includes("User rejected")) {
           const rejectionError = new Error("Transação rejeitada pelo usuário")
@@ -486,28 +470,32 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         throw error
       }
     },
-    [walletAddress, readCreditsFromContract],
+    [walletAddress, readCreditsFromContract, decrementCreditsOptimistic],
   )
 
   // Record a click (for compatibility - actual consumption happens via backend)
   const recordClick = useCallback(
     async (sessionId: string) => {
+      // Decrement credits optimistically for immediate UI feedback
+      // Each click consumes 1 credit
+      decrementCreditsOptimistic(1)
+      
       // This is handled by the backend via meta-transactions
-      // Refresh credits after a delay to ensure we have the latest balance
+      // Refresh credits after a delay to reconcile with contract (source of truth)
       if (walletAddress && walletAddress.trim() !== "") {
-        console.log("🔄 recordClick: Scheduling credits refresh...")
+        console.log("🔄 recordClick: Scheduling credits refresh for reconciliation...")
         setTimeout(async () => {
           try {
             await refreshCredits()
             const newBalance = await readCreditsFromContract(walletAddress)
-            console.log("✅ recordClick: Credits refreshed. New balance:", Number(newBalance))
+            console.log("✅ recordClick: Credits reconciled with contract. New balance:", Number(newBalance))
           } catch (error) {
             console.error("❌ recordClick: Error refreshing credits:", error)
           }
-        }, 3000) // Aumentado para 3s para garantir que a transação foi processada
+        }, 3000) // Delay para garantir que a transação foi processada
       }
     },
-    [walletAddress, refreshCredits, readCreditsFromContract],
+    [walletAddress, refreshCredits, readCreditsFromContract, decrementCreditsOptimistic],
   )
 
   // Get credits balance directly from contract (source of truth)
@@ -556,6 +544,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     recordClick,
     refreshCredits,
     getCreditsBalance,
+    decrementCreditsOptimistic,
     isLoading,
   }
 }
