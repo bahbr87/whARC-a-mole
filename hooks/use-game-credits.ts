@@ -448,10 +448,10 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         // Wait for transaction before updating
         await tx.wait()
         
-        // Read balance from contract after consumption (reconcile with source of truth)
-        const newBalance = await readCreditsFromContract(walletAddress)
-        // ✅ Convert to number explicitly (guarantee type safety)
-        setCredits(Number(newBalance))
+        // ✅ CORREÇÃO: Após a transação ser confirmada, chamar explicitamente refreshCredits()
+        // para atualizar o estado imediatamente, sem depender de eventos ou useEffect
+        console.log("🔄 [consumeCredits] Transaction confirmed, refreshing credits from contract...")
+        await refreshCredits()
       } catch (error: any) {
         console.error("Error consuming credits:", error)
         // On error, reconcile with contract to restore correct state
@@ -470,7 +470,7 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
         throw error
       }
     },
-    [walletAddress, readCreditsFromContract, decrementCreditsOptimistic],
+    [walletAddress, readCreditsFromContract, decrementCreditsOptimistic, refreshCredits],
   )
 
   // Record a click (for compatibility - actual consumption happens via backend)

@@ -304,7 +304,7 @@ export function GameScreen({
   
   // ✅ CORREÇÃO: Ref para rastrear se há transações pendentes
   const pendingTransactionsRef = useRef<Set<string>>(new Set())
-  const { credits, refreshCredits, getCreditsBalance } = useGameCredits(walletAddress)
+  const { credits, refreshCredits, getCreditsBalance, decrementCreditsOptimistic } = useGameCredits(walletAddress)
   
   // ✅ CORREÇÃO: Refresh credits ONLY when walletAddress changes (no polling, no refresh contínuo)
   useEffect(() => {
@@ -538,6 +538,11 @@ export function GameScreen({
 
       // 🚀 CRITICAL: Each click MUST generate a blockchain transaction
       // This is the core requirement - every click = one transaction on-chain
+      
+      // ✅ CORREÇÃO: Decrementar créditos otimisticamente imediatamente (1 crédito por clique)
+      decrementCreditsOptimistic(1)
+      console.log("⚡ [handleHoleClick] Credits decremented optimistically")
+      
       console.log("🖱️  CLICK DETECTED - Processing on-chain transaction...")
       recordClick(gameSessionId)
         .then((success) => {
@@ -545,20 +550,28 @@ export function GameScreen({
           // O recordClick já tem logs detalhados, então não precisamos duplicar
           if (!success) {
             console.warn("⚠️ Click detected but NOT processed (wallet not connected or error)")
+            // Se falhou, reconciliar com o contrato para restaurar o estado correto
+            setTimeout(() => {
+              refreshCredits().catch(err => console.error("Error reconciling credits:", err))
+            }, 2000)
+          } else {
+            // Se sucesso, reconciliar após delay para garantir sincronização
+            setTimeout(() => {
+              refreshCredits().catch(err => console.error("Error reconciling credits:", err))
+            }, 3000)
           }
-          // Não mostrar "success" aqui - os logs detalhados já estão em recordClick
         })
         .catch((error) => {
           // Log error but don't break the game
           // The error details are already logged in recordClick
           console.error("❌ Click transaction failed (game continues):", error.message || error)
-          // Don't show alert or break game flow - just log
+          // Em caso de erro, reconciliar com o contrato para restaurar o estado correto
+          setTimeout(() => {
+            refreshCredits().catch(err => console.error("Error reconciling credits after error:", err))
+          }, 2000)
         })
-      
-      // Don't refresh credits after every click - too many RPC calls
-      // Credits will be refreshed when needed (e.g., when showing credits dialog)
     },
-    [currentHole, animalType, showNextAnimal, difficulty, recordClick, gameSessionId, getAnimalSpeed],
+    [currentHole, animalType, showNextAnimal, difficulty, recordClick, gameSessionId, getAnimalSpeed, decrementCreditsOptimistic, refreshCredits],
   )
 
   useEffect(() => {
