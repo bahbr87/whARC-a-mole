@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react"
 import { BrowserProvider, Contract, parseUnits, formatUnits } from "ethers"
 import { useArcWallet } from "./use-arc-wallet"
 import { USDC_CONTRACT_ADDRESS, ERC20_ABI, GAME_CREDITS_ADDRESS as GAME_CREDITS_ADDRESS_FROM_CONFIG } from "@/lib/arc-config"
@@ -35,6 +35,7 @@ if (typeof window !== "undefined") {
 
 interface UseGameCreditsReturn {
   credits: number
+  setCredits: Dispatch<SetStateAction<number>>
   purchaseCredits: (amount: number) => Promise<void>
   consumeCredits: (clickCount: number) => Promise<void>
   recordClick: (sessionId: string) => Promise<void>
@@ -510,11 +511,21 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
     return Number(balance)
   }, [walletAddress, readCreditsFromContract])
 
-  // Effect: Setup event listeners when walletAddress is available
+  // ✅ CORREÇÃO: Removido useEffect que fazia refresh automático
+  // O estado de créditos só será atualizado via refreshCredits() explícito
+  // Isso evita sobrescrever atualizações otimistas com dados antigos do contrato
+  
+  // ✅ CORREÇÃO: Event listeners desabilitados - não fazem refresh automático
+  // Os event listeners podem ser reativados no futuro se necessário, mas por enquanto
+  // todas as atualizações devem ser explícitas via refreshCredits()
+  
+  // Effect: Setup event listeners when walletAddress is available (mas sem refresh automático)
   useEffect(() => {
-    if (walletAddress && walletAddress.trim() !== "") {
-      setupEventListeners()
-    }
+    // Event listeners desabilitados para evitar sobrescrever estado otimista
+    // Se necessário reativar no futuro, fazer com cuidado para não conflitar com atualizações otimistas
+    // if (walletAddress && walletAddress.trim() !== "") {
+    //   setupEventListeners()
+    // }
 
     return () => {
       // Cleanup event listeners
@@ -522,23 +533,14 @@ export function useGameCredits(walletAddress?: string): UseGameCreditsReturn {
       eventListenersRef.current = []
     }
   }, [walletAddress, setupEventListeners])
-
-  // Effect: Refresh credits ONLY when walletAddress changes (no polling)
-  useEffect(() => {
-    // ✅ Use walletAddress directly (source of truth from GameScreen)
-    if (walletAddress && walletAddress.trim() !== "") {
-      console.log("🔄 useEffect: walletAddress exists, refreshing credits once on mount/change")
-      // Read balance from contract immediately (only once, no polling)
-      refreshCredits()
-    } else {
-      // No walletAddress - set to 0
-      console.log("🔄 useEffect: No walletAddress available, setting credits to 0")
-      setCredits(0)
-    }
-  }, [walletAddress, refreshCredits])
+  
+  // ✅ CORREÇÃO: Removido useEffect que fazia refresh automático ao mudar walletAddress
+  // O componente que usa este hook deve chamar refreshCredits() explicitamente quando necessário
+  // Isso garante controle total sobre quando o estado é atualizado
 
   return {
     credits,
+    setCredits,
     purchaseCredits,
     consumeCredits,
     recordClick,
